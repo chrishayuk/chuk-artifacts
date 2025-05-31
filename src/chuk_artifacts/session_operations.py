@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-# chuk_artifacts/session_operations.py (SECURE VERSION)
+# chuk_artifacts/session_operations.py (LOGGING FIX)
 """
 Session-based file operations with strict session isolation.
-NO cross-session operations allowed for security.
+FIXED: Resolved logging conflict with 'filename' parameter.
 """
 
 from __future__ import annotations
@@ -36,27 +36,6 @@ class SessionOperations(BaseOperations):
     ) -> Dict[str, Any]:
         """
         Move a file within the SAME session or rename it.
-        
-        Parameters
-        ----------
-        artifact_id : str
-            Source artifact ID
-        new_filename : str, optional
-            New filename (renames the file)
-        new_session_id : str, optional
-            Target session (BLOCKED - always raises error if different)
-        new_meta : dict, optional
-            Additional metadata to merge
-            
-        Returns
-        -------
-        dict
-            Updated artifact metadata
-            
-        Raises
-        ------
-        ArtifactStoreError
-            If trying to move across sessions (always blocked)
         """
         self._check_closed()
         
@@ -96,12 +75,14 @@ class SessionOperations(BaseOperations):
             raise
         except Exception as e:
             logger.error(
-                "File move failed",
+                "File move failed for artifact %s: %s",
+                artifact_id,
+                str(e),
                 extra={
                     "artifact_id": artifact_id,
-                    "new_filename": new_filename,
+                    "new_file_name": new_filename,  # FIXED: Renamed from 'new_filename'
                     "new_session_id": new_session_id,
-                    "error": str(e)
+                    "operation": "move_file"
                 }
             )
             raise ProviderError(f"Move operation failed: {e}") from e
@@ -117,29 +98,6 @@ class SessionOperations(BaseOperations):
     ) -> str:
         """
         Copy a file WITHIN THE SAME SESSION only.
-        
-        Parameters
-        ----------
-        artifact_id : str
-            Source artifact ID
-        new_filename : str, optional
-            Filename for the copy (defaults to original + "_copy")
-        target_session_id : str, optional
-            Target session (BLOCKED - must be same as source session)
-        new_meta : dict, optional
-            Additional metadata to merge
-        summary : str, optional
-            New summary for the copy
-            
-        Returns
-        -------
-        str
-            New artifact ID of the copy
-            
-        Raises
-        ------
-        ArtifactStoreError
-            If trying to copy across sessions (always blocked)
         """
         self._check_closed()
         
@@ -193,12 +151,15 @@ class SessionOperations(BaseOperations):
             )
             
             logger.info(
-                "File copied within session",
+                "File copied within session: %s -> %s",
+                artifact_id,
+                new_artifact_id,
                 extra={
                     "source_artifact_id": artifact_id,
                     "new_artifact_id": new_artifact_id,
                     "session": copy_session,
-                    "security_level": "same_session_only"
+                    "security_level": "same_session_only",
+                    "operation": "copy_file"
                 }
             )
             
@@ -208,12 +169,14 @@ class SessionOperations(BaseOperations):
             raise
         except Exception as e:
             logger.error(
-                "File copy failed",
+                "File copy failed for artifact %s: %s",
+                artifact_id,
+                str(e),
                 extra={
                     "artifact_id": artifact_id,
-                    "new_filename": new_filename,
+                    "new_file_name": new_filename,  # FIXED: Renamed from 'new_filename'
                     "target_session_id": target_session_id,
-                    "error": str(e)
+                    "operation": "copy_file"
                 }
             )
             raise ProviderError(f"Copy operation failed: {e}") from e
@@ -227,9 +190,6 @@ class SessionOperations(BaseOperations):
     ) -> Union[str, bytes]:
         """
         Read file content directly.
-        
-        Note: This operation inherently respects session boundaries since
-        you can only read files you have artifact IDs for.
         """
         self._check_closed()
         
@@ -249,8 +209,10 @@ class SessionOperations(BaseOperations):
             raise
         except Exception as e:
             logger.error(
-                "File read failed",
-                extra={"artifact_id": artifact_id, "error": str(e)}
+                "File read failed for artifact %s: %s",
+                artifact_id,
+                str(e),
+                extra={"artifact_id": artifact_id, "operation": "read_file"}
             )
             raise ProviderError(f"Read operation failed: {e}") from e
 
@@ -268,35 +230,6 @@ class SessionOperations(BaseOperations):
     ) -> str:
         """
         Write content to a new file or overwrite existing WITHIN THE SAME SESSION.
-        
-        Parameters
-        ----------
-        content : str or bytes
-            Content to write
-        filename : str
-            Filename for the new file
-        mime : str, optional
-            MIME type (default: text/plain)
-        summary : str, optional
-            File summary
-        session_id : str, optional
-            Session for the file
-        meta : dict, optional
-            Additional metadata
-        encoding : str, optional
-            Text encoding for string content (default: utf-8)
-        overwrite_artifact_id : str, optional
-            If provided, overwrite this existing artifact (must be in same session)
-            
-        Returns
-        -------
-        str
-            Artifact ID of the written file
-            
-        Raises
-        ------
-        ArtifactStoreError
-            If trying to overwrite a file in a different session
         """
         self._check_closed()
         
@@ -351,28 +284,35 @@ class SessionOperations(BaseOperations):
                 meta=write_meta
             )
             
+            # FIXED: Use separate variables for logging to avoid 'filename' conflict
             logger.info(
-                "File written successfully",
+                "File written successfully: %s (artifact_id: %s)",
+                filename,
+                artifact_id,
                 extra={
                     "artifact_id": artifact_id,
-                    "filename": filename,
+                    "file_name": filename,  # FIXED: Renamed from 'filename'
                     "bytes": len(data),
                     "overwrite": bool(overwrite_artifact_id),
                     "session_id": session_id,
-                    "security_level": "session_isolated"
+                    "security_level": "session_isolated",
+                    "operation": "write_file"
                 }
             )
             
             return artifact_id
             
         except Exception as e:
+            # FIXED: Use separate variables for logging to avoid 'filename' conflict
             logger.error(
-                "File write failed",
+                "File write failed for %s: %s",
+                filename,
+                str(e),
                 extra={
-                    "filename": filename,
+                    "file_name": filename,  # FIXED: Renamed from 'filename'
                     "overwrite_artifact_id": overwrite_artifact_id,
                     "session_id": session_id,
-                    "error": str(e)
+                    "operation": "write_file"
                 }
             )
             raise ProviderError(f"Write operation failed: {e}") from e
@@ -385,9 +325,6 @@ class SessionOperations(BaseOperations):
     ) -> List[Dict[str, Any]]:
         """
         List files in a directory-like structure within a session.
-        
-        This operation is inherently session-safe since it requires
-        explicit session_id parameter.
         """
         try:
             from .metadata import MetadataOperations
@@ -395,11 +332,13 @@ class SessionOperations(BaseOperations):
             return await metadata_ops.list_by_prefix(session_id, directory_prefix, limit)
         except Exception as e:
             logger.error(
-                "Directory listing failed",
+                "Directory listing failed for session %s: %s",
+                session_id,
+                str(e),
                 extra={
                     "session_id": session_id,
                     "directory_prefix": directory_prefix,
-                    "error": str(e)
+                    "operation": "get_directory_contents"
                 }
             )
             raise ProviderError(f"Directory listing failed: {e}") from e
@@ -410,27 +349,10 @@ class SessionOperations(BaseOperations):
         core_ops = CoreStorageOperations(self._artifact_store)
         return await core_ops.retrieve(artifact_id)
 
-    # NEW: Session security validation helper
+    # Session security validation helper
     async def _validate_session_access(self, artifact_id: str, expected_session_id: str = None) -> Dict[str, Any]:
         """
         Validate that an artifact belongs to the expected session.
-        
-        Parameters
-        ----------
-        artifact_id : str
-            Artifact to check
-        expected_session_id : str, optional
-            Expected session ID (if None, just returns the session)
-            
-        Returns
-        -------
-        dict
-            Artifact metadata
-            
-        Raises
-        ------
-        ArtifactStoreError
-            If artifact belongs to different session
         """
         record = await self._get_record(artifact_id)
         actual_session = record.get("session_id")
