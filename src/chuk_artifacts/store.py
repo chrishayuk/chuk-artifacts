@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-# chuk_artifacts/store.py
+# chuk_artifacts/store.py (ENHANCED)
 """
-Asynchronous, object-store-backed artefact manager with proper modularization.
+Asynchronous, object-store-backed artefact manager with MCP server support.
 """
 
 from __future__ import annotations
 
 import os, logging
-from typing import Any, Dict, List, Callable, AsyncContextManager, Optional
+from typing import Any, Dict, List, Callable, AsyncContextManager, Optional, Union
 
 try:
     import aioboto3
@@ -51,15 +51,9 @@ def _default_session_factory() -> Callable[[], AsyncContextManager]:
 # ─────────────────────────────────────────────────────────────────────
 class ArtifactStore:
     """
-    FINAL FIXED: Asynchronous artifact storage with modularized operations.
+    Asynchronous artifact storage with MCP server support.
     
-    The circular reference issue has been resolved by fixing BaseOperations.
-    Now properly delegates operations to specialized modules:
-    - CoreStorageOperations: store() and retrieve()
-    - PresignedURLOperations: presign*() methods
-    - MetadataOperations: metadata(), exists(), delete()
-    - BatchOperations: store_batch()
-    - AdminOperations: validate_configuration(), get_stats()
+    Enhanced with MCP-specific operations for file management within sessions.
     """
 
     def __init__(
@@ -129,22 +123,23 @@ class ArtifactStore:
         self._session_provider_name = session_provider or "memory"
         self._closed = False
 
-        # Initialize operation modules (import here to avoid circular dependencies)
-        # FIXED: Now works correctly with the fixed BaseOperations
+        # Initialize operation modules
         from .core import CoreStorageOperations
         from .presigned import PresignedURLOperations
         from .metadata import MetadataOperations
         from .batch import BatchOperations
         from .admin import AdminOperations
+        from .session_operations import SessionOperations 
         
         self._core = CoreStorageOperations(self)
         self._presigned = PresignedURLOperations(self)
         self._metadata = MetadataOperations(self)
         self._batch = BatchOperations(self)
         self._admin = AdminOperations(self)
+        self._session = SessionOperations(self)
 
         logger.info(
-            "ArtifactStore initialized with fixed modular operations",
+            "ArtifactStore initialized with session operations support",
             extra={
                 "bucket": bucket,
                 "storage_provider": self._storage_provider_name,
@@ -284,15 +279,20 @@ class ArtifactStore:
         summary: str = None,
         meta: Dict[str, Any] = None,
         filename: str = None,
-        ttl: int = None
+        ttl: int = None,
+        # NEW: MCP-specific parameters
+        new_meta: Dict[str, Any] = None,
+        merge: bool = True
     ) -> Dict[str, Any]:
-        """Update artifact metadata without changing the stored data."""
+        """Update artifact metadata with MCP server compatibility."""
         return await self._metadata.update_metadata(
             artifact_id,
             summary=summary,
             meta=meta,
             filename=filename,
-            ttl=ttl
+            ttl=ttl,
+            new_meta=new_meta,
+            merge=merge
         )
 
     async def extend_ttl(self, artifact_id: str, additional_seconds: int) -> Dict[str, Any]:
@@ -302,6 +302,15 @@ class ArtifactStore:
     async def list_by_session(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         """List artifacts for a specific session."""
         return await self._metadata.list_by_session(session_id, limit)
+
+    async def list_by_prefix(
+        self, 
+        session_id: str, 
+        prefix: str = "", 
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """List artifacts in a session with filename prefix filtering."""
+        return await self._metadata.list_by_prefix(session_id, prefix, limit)
 
     # ─────────────────────────────────────────────────────────────────
     # Batch operations (delegated to BatchOperations)
@@ -327,6 +336,95 @@ class ArtifactStore:
     async def get_stats(self) -> Dict[str, Any]:
         """Get storage statistics."""
         return await self._admin.get_stats()
+
+    # ─────────────────────────────────────────────────────────────────
+    # Session-based file operations (delegated to SessionOperations)
+    # ─────────────────────────────────────────────────────────────────
+
+    async def move_file(
+        self,
+        artifact_id: str,
+        *,
+        new_filename: str = None,
+        new_session_id: str = None,
+        new_meta: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Move a file within sessions or rename it."""
+        return await self._session.move_file(
+            artifact_id,
+            new_filename=new_filename,
+            new_session_id=new_session_id,
+            new_meta=new_meta
+        )
+
+    async def copy_file(
+        self,
+        artifact_id: str,
+        *,
+        new_filename: str = None,
+        target_session_id: str = None,
+        new_meta: Dict[str, Any] = None,
+        summary: str = None
+    ) -> str:
+        """Copy a file within or across sessions."""
+        return await self._session.copy_file(
+            artifact_id,
+            new_filename=new_filename,
+            target_session_id=target_session_id,
+            new_meta=new_meta,
+            summary=summary
+        )
+
+    async def read_file(
+        self,
+        artifact_id: str,
+        *,
+        encoding: str = "utf-8",
+        as_text: bool = True
+    ) -> Union[str, bytes]:
+        """Read file content directly."""
+        return await self._session.read_file(
+            artifact_id,
+            encoding=encoding,
+            as_text=as_text
+        )
+
+    async def write_file(
+        self,
+        content: Union[str, bytes],
+        *,
+        filename: str,
+        mime: str = "text/plain",
+        summary: str = "",
+        session_id: str = None,
+        meta: Dict[str, Any] = None,
+        encoding: str = "utf-8",
+        overwrite_artifact_id: str = None
+    ) -> str:
+        """Write content to a new file or overwrite existing."""
+        return await self._session.write_file(
+            content,
+            filename=filename,
+            mime=mime,
+            summary=summary,
+            session_id=session_id,
+            meta=meta,
+            encoding=encoding,
+            overwrite_artifact_id=overwrite_artifact_id
+        )
+
+    async def get_directory_contents(
+        self,
+        session_id: str,
+        directory_prefix: str = "",
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """List files in a directory-like structure within a session."""
+        return await self._session.get_directory_contents(
+            session_id,
+            directory_prefix,
+            limit
+        )
 
     # ─────────────────────────────────────────────────────────────────
     # Resource management
