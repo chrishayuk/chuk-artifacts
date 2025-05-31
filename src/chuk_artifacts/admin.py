@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/admin.py
 """
-Administrative and debugging operations.
+Administrative and debugging operations
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class AdminOperations(BaseOperations):
-    """Handles administrative and debugging operations."""
+    """FIXED: Handles administrative and debugging operations."""
 
     async def validate_configuration(self) -> Dict[str, Any]:
         """Validate store configuration and connectivity."""
@@ -75,5 +75,5 @@ class AdminOperations(BaseOperations):
             "session_provider": self.session_provider_name,
             "bucket": self.bucket,
             "max_retries": self.max_retries,
-            "closed": self.store._closed,
+            "closed": self._artifact_store._closed,  # FIXED: Updated reference
         }

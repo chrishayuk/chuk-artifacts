@@ -31,7 +31,7 @@ __all__ = ["factory_for_env"]
 def factory_for_env() -> Callable[[], AsyncContextManager]:
     """Return a provider-specific factory based on `$ARTIFACT_PROVIDER`."""
 
-    provider = os.getenv("ARTIFACT_PROVIDER", "memory").lower()
+    provider = os.getenv("ARTIFACT_PROVIDER", "memory").lower().strip()
 
     # Fast paths for the built-ins ------------------------------------------------
     # Memory first as it's the default
@@ -58,7 +58,16 @@ def factory_for_env() -> Callable[[], AsyncContextManager]:
     # ---------------------------------------------------------------------------
     # Fallback: dynamic lookup – allows user-supplied provider implementations.
     # ---------------------------------------------------------------------------
-    mod = import_module(f"chuk_artifacts.providers.{provider}")
+    try:
+        mod = import_module(f"chuk_artifacts.providers.{provider}")
+    except ModuleNotFoundError as exc:
+        # Provide helpful error message with available providers
+        available = ["memory", "filesystem", "s3", "ibm_cos", "ibm_cos_iam"]
+        raise ValueError(
+            f"Unknown storage provider '{provider}'. "
+            f"Available providers: {', '.join(available)}"
+        ) from exc
+    
     if not hasattr(mod, "factory"):
         raise AttributeError(
             f"Provider '{provider}' lacks a factory() function"

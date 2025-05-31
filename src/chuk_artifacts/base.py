@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/base.py
 """
-Base class for operation modules.
+base class for operation modules
 """
 
 from __future__ import annotations
@@ -17,38 +17,39 @@ logger = logging.getLogger(__name__)
 
 
 class BaseOperations:
-    """Base class for all operation modules."""
+    """Fixed base class for all operation modules."""
     
-    def __init__(self, store: ArtifactStore):
-        self.store = store
+    def __init__(self, store: 'ArtifactStore'):
+        # FIXED: Renamed from self.store to self._artifact_store to avoid method name conflicts
+        self._artifact_store = store
     
     @property
     def bucket(self) -> str:
-        return self.store.bucket
+        return self._artifact_store.bucket
     
     @property
     def s3_factory(self):
-        return self.store._s3_factory
+        return self._artifact_store._s3_factory
     
     @property
     def session_factory(self):
-        return self.store._session_factory
+        return self._artifact_store._session_factory
     
     @property
     def storage_provider_name(self) -> str:
-        return self.store._storage_provider_name
+        return self._artifact_store._storage_provider_name
     
     @property
     def session_provider_name(self) -> str:
-        return self.store._session_provider_name
+        return self._artifact_store._session_provider_name
     
     @property
     def max_retries(self) -> int:
-        return self.store.max_retries
+        return self._artifact_store.max_retries
     
     def _check_closed(self):
         """Check if store is closed and raise error if so."""
-        if self.store._closed:
+        if self._artifact_store._closed:
             raise ArtifactStoreError("Store has been closed")
     
     async def _get_record(self, artifact_id: str) -> Dict[str, Any]:

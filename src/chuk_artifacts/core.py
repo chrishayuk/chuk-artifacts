@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/core.py
 """
-Core storage operations: store, retrieve, and related helpers.
+core storage operations.
 """
 
 from __future__ import annotations
 
 import uuid, hashlib, time, asyncio, logging, json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
-from .base import BaseOperations
+if TYPE_CHECKING:
+    from .store import ArtifactStore
+
 from .exceptions import (
     ArtifactStoreError, ArtifactNotFoundError, ArtifactExpiredError, 
     ArtifactCorruptedError, ProviderError, SessionError
@@ -22,8 +24,12 @@ _ANON_PREFIX = "anon"
 _DEFAULT_TTL = 900
 
 
-class CoreStorageOperations(BaseOperations):
-    """Handles core storage operations: store and retrieve."""
+class CoreStorageOperations:
+    """core storage operations without BaseOperations inheritance."""
+
+    def __init__(self, artifact_store: 'ArtifactStore'):
+        self.artifact_store = artifact_store  # Renamed to avoid conflicts
+        logger.info(f"CoreStorageOperations initialized with store: {type(artifact_store)}")
 
     async def store(
         self,
@@ -37,7 +43,8 @@ class CoreStorageOperations(BaseOperations):
         ttl: int = _DEFAULT_TTL,
     ) -> str:
         """Store artifact data with metadata."""
-        self._check_closed()
+        if self.artifact_store._closed:
+            raise ArtifactStoreError("Store has been closed")
         
         start_time = time.time()
         artifact_id = uuid.uuid4().hex
@@ -61,12 +68,12 @@ class CoreStorageOperations(BaseOperations):
                 "sha256": hashlib.sha256(data).hexdigest(),
                 "stored_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
                 "ttl": ttl,
-                "storage_provider": self.storage_provider_name,
-                "session_provider": self.session_provider_name,
+                "storage_provider": self.artifact_store._storage_provider_name,
+                "session_provider": self.artifact_store._session_provider_name,
             }
 
             # Cache metadata using session provider
-            session_ctx_mgr = self.session_factory()
+            session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, ttl, json.dumps(record))
 
@@ -78,7 +85,7 @@ class CoreStorageOperations(BaseOperations):
                     "bytes": len(data),
                     "mime": mime,
                     "duration_ms": duration_ms,
-                    "storage_provider": self.storage_provider_name,
+                    "storage_provider": self.artifact_store._storage_provider_name,
                 }
             )
 
@@ -92,7 +99,7 @@ class CoreStorageOperations(BaseOperations):
                     "artifact_id": artifact_id,
                     "error": str(e),
                     "duration_ms": duration_ms,
-                    "storage_provider": self.storage_provider_name,
+                    "storage_provider": self.artifact_store._storage_provider_name,
                 },
                 exc_info=True
             )
@@ -106,12 +113,12 @@ class CoreStorageOperations(BaseOperations):
         """Store data with retry logic."""
         last_exception = None
         
-        for attempt in range(self.max_retries):
+        for attempt in range(self.artifact_store.max_retries):
             try:
-                storage_ctx_mgr = self.s3_factory()
+                storage_ctx_mgr = self.artifact_store._s3_factory()
                 async with storage_ctx_mgr as s3:
                     await s3.put_object(
-                        Bucket=self.bucket,
+                        Bucket=self.artifact_store.bucket,
                         Key=key,
                         Body=data,
                         ContentType=mime,
@@ -121,7 +128,7 @@ class CoreStorageOperations(BaseOperations):
                 
             except Exception as e:
                 last_exception = e
-                if attempt < self.max_retries - 1:
+                if attempt < self.artifact_store.max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff
                     logger.warning(
                         f"Storage attempt {attempt + 1} failed, retrying in {wait_time}s",
@@ -129,22 +136,23 @@ class CoreStorageOperations(BaseOperations):
                     )
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error(f"All {self.max_retries} storage attempts failed")
+                    logger.error(f"All {self.artifact_store.max_retries} storage attempts failed")
         
         raise last_exception
 
     async def retrieve(self, artifact_id: str) -> bytes:
         """Retrieve artifact data directly."""
-        self._check_closed()
+        if self.artifact_store._closed:
+            raise ArtifactStoreError("Store has been closed")
         
         start_time = time.time()
         
         try:
             record = await self._get_record(artifact_id)
             
-            storage_ctx_mgr = self.s3_factory()
+            storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
-                response = await s3.get_object(Bucket=self.bucket, Key=record["key"])
+                response = await s3.get_object(Bucket=self.artifact_store.bucket, Key=record["key"])
                 
                 # Handle different response formats from different providers
                 if hasattr(response["Body"], "read"):
@@ -187,3 +195,21 @@ class CoreStorageOperations(BaseOperations):
                 }
             )
             raise ProviderError(f"Retrieval failed: {e}") from e
+
+    async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
+        """Retrieve artifact metadata from session provider."""
+        try:
+            session_ctx_mgr = self.artifact_store._session_factory()
+            async with session_ctx_mgr as session:
+                raw = await session.get(artifact_id)
+        except Exception as e:
+            raise SessionError(f"Session provider error retrieving {artifact_id}: {e}") from e
+        
+        if raw is None:
+            raise ArtifactNotFoundError(f"Artifact {artifact_id} not found or expired")
+        
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error(f"Corrupted metadata for artifact {artifact_id}: {e}")
+            raise ArtifactCorruptedError(f"Corrupted metadata for artifact {artifact_id}") from e
