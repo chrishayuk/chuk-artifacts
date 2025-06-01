@@ -1,19 +1,20 @@
 # Chuk Artifacts
 
-[![Tests](https://img.shields.io/badge/tests-64%2F64%20passing-brightgreen)](https://github.com/your-org/chuk-artifacts)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/your-org/chuk-artifacts)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Asynchronous, multi-backend artifact storage with session-based security and presigned URLs**
+**Asynchronous, multi-backend artifact storage with mandatory session-based security and grid architecture**
 
 Chuk Artifacts provides a production-ready, modular artifact storage system that works seamlessly across multiple storage backends (memory, filesystem, AWS S3, IBM Cloud Object Storage) with Redis or memory-based metadata caching and **strict session-based security**.
 
 ## ✨ Key Features
 
-- 🏗️ **Modular Architecture**: 6 specialized operation modules for clean separation of concerns
-- 🔒 **Session-Based Security**: Strict isolation with no cross-session operations allowed
+- 🏗️ **Modular Architecture**: 5 specialized operation modules for clean separation of concerns
+- 🔒 **Mandatory Session Security**: Strict isolation with no anonymous artifacts or cross-session operations
+- 🌐 **Grid Architecture**: `grid/{sandbox_id}/{session_id}/{artifact_id}` paths for federation-ready organization
 - 🔄 **Multi-Backend Support**: Memory, filesystem, S3, IBM COS with seamless switching
-- ⚡ **Fully Async**: Built with async/await for high performance (3,000+ ops/sec)
+- ⚡ **High Performance**: Built with async/await for high throughput (3,000+ ops/sec)
 - 🔗 **Presigned URLs**: Secure, time-limited access without credential exposure
 - 📊 **Batch Operations**: Efficient multi-file uploads and processing
 - 🗃️ **Metadata Caching**: Fast lookups with Redis or memory-based sessions
@@ -37,61 +38,61 @@ uv add chuk-artifacts
 from chuk_artifacts import ArtifactStore
 
 # Zero-config setup (uses memory provider)
-store = ArtifactStore()
-
-# Store an artifact
-artifact_id = await store.store(
-    data=b"Hello, world!",
-    mime="text/plain",
-    summary="A simple greeting",
-    filename="hello.txt",
-    session_id="user_123"  # Session-based isolation
-)
-
-# Retrieve it
-data = await store.retrieve(artifact_id)
-print(data.decode())  # "Hello, world!"
-
-# Generate a presigned URL
-download_url = await store.presign_medium(artifact_id)  # 1 hour
+async with ArtifactStore() as store:
+    # Store an artifact (session auto-allocated)
+    artifact_id = await store.store(
+        data=b"Hello, world!",
+        mime="text/plain",
+        summary="A simple greeting",
+        filename="hello.txt"
+        # session_id auto-allocated if not provided
+    )
+    
+    # Retrieve it
+    data = await store.retrieve(artifact_id)
+    print(data.decode())  # "Hello, world!"
+    
+    # Generate a presigned URL
+    download_url = await store.presign_medium(artifact_id)  # 1 hour
 ```
 
 ### Session-Based File Management
 
 ```python
-# Create files in user sessions
-doc_id = await store.write_file(
-    content="# User's Document\n\nPrivate content here.",
-    filename="docs/private.md",
-    mime="text/markdown",
-    session_id="user_alice"
-)
-
-# List files in a session
-files = await store.list_by_session("user_alice")
-print(f"Alice has {len(files)} files")
-
-# List directory-like contents
-docs = await store.get_directory_contents("user_alice", "docs/")
-print(f"Alice's docs: {len(docs)} files")
-
-# Copy within same session (allowed)
-backup_id = await store.copy_file(
-    doc_id,
-    new_filename="docs/private_backup.md"
-)
-
-# Cross-session operations are BLOCKED for security
-try:
-    await store.copy_file(
-        doc_id, 
-        target_session_id="user_bob"  # This will fail
+async with ArtifactStore() as store:
+    # Create files in user sessions
+    doc_id = await store.write_file(
+        content="# User's Document\n\nPrivate content here.",
+        filename="docs/private.md",
+        mime="text/markdown",
+        session_id="user_alice"
     )
-except ArtifactStoreError:
-    print("Cross-session operations blocked!")
+    
+    # List files in a session
+    files = await store.list_by_session("user_alice")
+    print(f"Alice has {len(files)} files")
+    
+    # List directory-like contents
+    docs = await store.get_directory_contents("user_alice", "docs/")
+    print(f"Alice's docs: {len(docs)} files")
+    
+    # Copy within same session (allowed)
+    backup_id = await store.copy_file(
+        doc_id,
+        new_filename="docs/private_backup.md"
+    )
+    
+    # Cross-session operations are BLOCKED for security
+    try:
+        await store.copy_file(
+            doc_id, 
+            target_session_id="user_bob"  # This will fail
+        )
+    except ArtifactStoreError:
+        print("✅ Cross-session operations blocked!")
 ```
 
-### With Configuration
+### Configuration
 
 ```python
 # Production setup with S3 and Redis
@@ -111,28 +112,55 @@ store = ArtifactStore(
 store = ArtifactStore()  # Auto-loads configuration
 ```
 
-## 🏗️ Architecture
+## 🏗️ Modular Architecture
 
-Chuk Artifacts uses a modular architecture with specialized operation modules:
+Chuk Artifacts uses a clean modular architecture with specialized operation modules:
 
 ```
 ArtifactStore (Main Coordinator)
 ├── CoreStorageOperations     # store() and retrieve()
-├── PresignedURLOperations    # URL generation and upload workflows
-├── MetadataOperations        # metadata, exists, delete, update, list_by_session
-├── SessionOperations         # session-based file operations (NEW)
+├── MetadataOperations        # metadata, exists, delete, update, list operations
+├── PresignedURLOperations    # URL generation and upload workflows  
 ├── BatchOperations          # store_batch() for multiple files
 └── AdminOperations          # validate_configuration, get_stats
 ```
+
+### Grid Architecture
+
+All artifacts are organized using a consistent grid structure:
+
+```
+grid/{sandbox_id}/{session_id}/{artifact_id}
+```
+
+**Benefits:**
+- **Federation Ready**: Cross-sandbox discovery and routing
+- **Session Isolation**: Clear boundaries for security
+- **Predictable Paths**: Easy to understand and manage
+- **Scalable**: Handles multi-tenant applications
 
 This design provides:
 - **Better testability**: Each module can be tested independently
 - **Enhanced maintainability**: Clear separation of concerns
 - **Easy extensibility**: Add new operation types without touching core
 - **Improved debugging**: Isolated functionality for easier troubleshooting
-- **Session security**: Dedicated module for secure session operations
 
 ## 🔒 Session-Based Security
+
+### Mandatory Sessions
+```python
+# Every artifact belongs to a session - no anonymous artifacts
+artifact_id = await store.store(
+    data=b"content",
+    mime="text/plain",
+    summary="description"
+    # session_id auto-allocated if not provided
+)
+
+# Get the session it was allocated to
+metadata = await store.metadata(artifact_id)
+session_id = metadata["session_id"]
+```
 
 ### Strict Session Isolation
 ```python
@@ -155,19 +183,6 @@ company_b_files = await store.list_by_session("company_b")
 # Compliance-ready: GDPR, SOX, HIPAA
 ```
 
-### Directory-Like Organization
-```python
-# Organize files with path-like prefixes
-await store.write_file(content, filename="docs/reports/q1_sales.pdf", session_id="user_123")
-await store.write_file(content, filename="docs/contracts/client_a.pdf", session_id="user_123")
-await store.write_file(content, filename="images/profile.jpg", session_id="user_123")
-
-# List by directory
-docs = await store.get_directory_contents("user_123", "docs/")
-reports = await store.get_directory_contents("user_123", "docs/reports/")
-images = await store.get_directory_contents("user_123", "images/")
-```
-
 ## 📦 Storage Providers
 
 ### Memory Provider
@@ -177,7 +192,7 @@ store = ArtifactStore(storage_provider="memory")
 - Perfect for development and testing
 - Zero configuration required
 - Non-persistent (data lost on restart)
-- Session listing returns empty (graceful degradation)
+- **Note**: Provider isolation limitations for testing
 
 ### Filesystem Provider
 ```python
@@ -189,7 +204,7 @@ os.environ["ARTIFACT_FS_ROOT"] = "./my-artifacts"
 - Persistent across restarts
 - `file://` URLs for local access
 - **Full session listing support**
-- Great for development and small deployments
+- Great for development and staging
 
 ### AWS S3 Provider
 ```python
@@ -272,7 +287,7 @@ async def upload_file(data_base64: str, filename: str, mime: str, session_id: st
 
 # MCP tool: List session files
 async def list_session_files(session_id: str, prefix: str = ""):
-    files = await store.list_by_prefix(session_id, prefix)
+    files = await store.get_directory_contents(session_id, prefix)
     return {"files": files}
 
 # MCP tool: Copy file (within session only)
@@ -314,39 +329,6 @@ async def list_user_files(user_id: str, directory: str = ""):
     return await store.get_directory_contents(f"user_{user_id}", directory)
 ```
 
-### Multi-Tenant SaaS Application
-
-```python
-# Tenant isolation
-async def create_tenant_workspace(tenant_id: str):
-    """Create isolated workspace for tenant"""
-    
-    # Create tenant directory structure
-    directories = ["documents/", "images/", "reports/", "config/"]
-    
-    for directory in directories:
-        # Create a marker file for the directory
-        await store.write_file(
-            content=f"# {directory.rstrip('/')} Directory\n\nTenant workspace created.",
-            filename=f"{directory}README.md",
-            session_id=f"tenant_{tenant_id}"
-        )
-    
-    return {"tenant_id": tenant_id, "directories": directories}
-
-async def get_tenant_usage(tenant_id: str):
-    """Get storage usage for a tenant"""
-    files = await store.list_by_session(f"tenant_{tenant_id}")
-    total_bytes = sum(file.get('bytes', 0) for file in files)
-    
-    return {
-        "tenant_id": tenant_id,
-        "file_count": len(files),
-        "total_bytes": total_bytes,
-        "total_mb": round(total_bytes / 1024 / 1024, 2)
-    }
-```
-
 ### Advanced File Operations
 
 ```python
@@ -368,13 +350,15 @@ await store.move_file(
     new_filename="documents/renamed_doc.md"
 )
 
-# Update file content (overwrite)
-updated_id = await store.write_file(
-    content="# Updated Document\n\nThis content replaces the old file.",
-    filename="documents/updated_doc.md",
-    session_id="user_123",
-    overwrite_artifact_id=old_artifact_id
+# Update metadata
+await store.update_metadata(
+    artifact_id,
+    summary="Updated summary",
+    meta={"version": 2, "updated_by": "user_123"}
 )
+
+# Extend TTL
+await store.extend_ttl(artifact_id, additional_seconds=3600)
 ```
 
 ### Batch Processing
@@ -400,43 +384,40 @@ items = [
 artifact_ids = await store.store_batch(items, session_id="product-catalog")
 ```
 
-### Context Manager Usage
-
-```python
-async with ArtifactStore() as store:
-    artifact_id = await store.store(
-        data=b"Temporary data",
-        mime="text/plain",
-        summary="Auto-cleanup example",
-        session_id="temp_session"
-    )
-    # Store automatically closed on exit
-```
-
 ## 🧪 Testing
 
 ### Run All Tests
 ```bash
-# Comprehensive smoke test (64+ test scenarios)
-uv run examples/artifact_smoke_test.py
+# MCP server scenarios (recommended)
+uv run examples/mcp_test_demo.py
 
-# Usage examples with all providers
-uv run examples/artifact_usage_examples.py
-
-# Session operations demo (NEW)
+# Session security testing
 uv run examples/session_operations_demo.py
+
+# Grid architecture demo
+uv run examples/grid_demo.py
+
+# Complete verification
+uv run examples/complete_verification.py
 ```
 
-### Session Security Testing
-```bash
-# Run secure session operations demo
-uv run examples/session_operations_demo.py
+### Test Results
+Recent test results show excellent performance:
+```
+📤 Test 1: Rapid file creation...
+✅ Created 20 files in 0.006s (3,083 files/sec)
 
-# Output shows:
-# ✅ Cross-session copy correctly blocked
-# ✅ Cross-session move correctly blocked  
-# ✅ Cross-session overwrite correctly blocked
-# 🛡️ ALL SECURITY TESTS PASSED!
+📋 Test 2: Session listing performance...
+✅ Listed 20 files in 0.002s
+
+📁 Test 3: Directory operations...
+✅ Listed uploads/ directory (20 files) in 0.002s
+
+📖 Test 4: Batch read operations...
+✅ Read 10 files in 0.002s (4,693 reads/sec)
+
+📋 Test 5: Copy operations...
+✅ Copied 5 files in 0.003s (1,811 copies/sec)
 ```
 
 ### Development Setup
@@ -462,6 +443,7 @@ store = testing_setup("./test-artifacts")  # Uses filesystem
 ARTIFACT_PROVIDER=s3              # memory, filesystem, s3, ibm_cos, ibm_cos_iam
 ARTIFACT_BUCKET=my-artifacts       # Bucket/container name
 ARTIFACT_FS_ROOT=./artifacts       # Filesystem root (filesystem provider)
+ARTIFACT_SANDBOX_ID=my-app         # Sandbox identifier for multi-tenancy
 
 # Session configuration  
 SESSION_PROVIDER=redis             # memory, redis
@@ -506,42 +488,47 @@ store = ArtifactStore()
 - **Connection Pooling**: Efficient resource usage with aioboto3
 - **Metadata Caching**: Sub-millisecond lookups with Redis
 - **Batch Operations**: Reduced overhead for multiple files
-- **Streaming**: Large file support with streaming reads/writes
-- **Session Listing**: Optimized prefix-based queries
+- **Grid Architecture**: Optimized session-based queries
 
 ### Performance Benchmarks
 ```
-✅ Created 50 files in 0.02 seconds (2,933 files/sec)
-✅ Listed 50 files in 0.006 seconds
-✅ Listed directory (50 files) in 0.005 seconds  
-✅ Read 10 files in 0.002 seconds (5,375 reads/sec)
+✅ File Creation: 3,083 files/sec
+✅ File Reading: 4,693 reads/sec  
+✅ File Copying: 1,811 copies/sec
+✅ Session Listing: ~0.002s for 20+ files
+✅ Directory Listing: ~0.002s for filtered results
 ```
 
 ## 🔒 Security
 
+- **Mandatory Sessions**: No anonymous artifacts allowed
 - **Session Isolation**: Strict boundaries prevent cross-session access
 - **No Cross-Session Operations**: Copy, move, overwrite blocked across sessions
+- **Grid Architecture**: Clear audit trail in paths
 - **Presigned URLs**: Time-limited access without credential sharing
 - **Secure Defaults**: Conservative TTL and expiration settings
 - **Credential Isolation**: Environment-based configuration
 - **Error Handling**: No sensitive data in logs or exceptions
-- **Multi-Tenant Ready**: Perfect for SaaS applications
 
 ### Security Validation
 ```python
 # All these operations are blocked for security
 await store.copy_file(user_a_file, target_session_id="user_b")  # ❌ Blocked
 await store.move_file(user_a_file, new_session_id="user_b")     # ❌ Blocked  
-await store.write_file(content, session_id="user_b", 
-                      overwrite_artifact_id=user_a_file)       # ❌ Blocked
+
+# Security test results:
+# ✅ Cross-session copy correctly blocked
+# ✅ Cross-session move correctly blocked  
+# ✅ Cross-session overwrite correctly blocked
+# 🛡️ ALL SECURITY TESTS PASSED!
 ```
 
 ## 📝 API Reference
 
 ### Core Methods
 
-#### `store(data, *, mime, summary, meta=None, filename=None, session_id=None, ttl=900)`
-Store artifact data with metadata.
+#### `store(data, *, mime, summary, meta=None, filename=None, session_id=None, user_id=None, ttl=900)`
+Store artifact data with metadata. Session auto-allocated if not provided.
 
 #### `retrieve(artifact_id)`
 Retrieve artifact data by ID.
@@ -552,28 +539,44 @@ Get artifact metadata.
 #### `exists(artifact_id)` / `delete(artifact_id)`
 Check existence or delete artifacts.
 
-### Session Operations (NEW)
+### Session Operations
+
+#### `create_session(user_id=None, ttl_hours=None)`
+Create a new session explicitly.
+
+#### `validate_session(session_id)` / `get_session_info(session_id)`
+Session validation and information retrieval.
 
 #### `list_by_session(session_id, limit=100)`
 List all artifacts in a session.
 
-#### `list_by_prefix(session_id, prefix="", limit=100)`
-List artifacts with filename prefix (directory-like).
-
 #### `get_directory_contents(session_id, directory_prefix="", limit=100)`
 Get files in a directory-like structure.
 
-#### `copy_file(artifact_id, *, new_filename=None, target_session_id=None, new_meta=None)`
-Copy file within same session only (cross-session blocked).
+### File Operations
 
-#### `move_file(artifact_id, *, new_filename=None, new_session_id=None, new_meta=None)`
-Move/rename file within same session only (cross-session blocked).
+#### `write_file(content, *, filename, mime="text/plain", session_id=None, ...)`
+Write content to new file.
 
 #### `read_file(artifact_id, *, encoding="utf-8", as_text=True)`
 Read file content directly as text or binary.
 
-#### `write_file(content, *, filename, mime="text/plain", session_id=None, overwrite_artifact_id=None)`
-Write content to new file or overwrite existing (within same session).
+#### `copy_file(artifact_id, *, new_filename=None, new_meta=None, summary=None)`
+Copy file within same session only (cross-session blocked).
+
+#### `move_file(artifact_id, *, new_filename=None, new_meta=None)`
+Move/rename file within same session only (cross-session blocked).
+
+#### `list_files(session_id, prefix="", limit=100)`
+List files with optional prefix filtering.
+
+### Metadata Operations
+
+#### `update_metadata(artifact_id, *, summary=None, meta=None, merge=True, **kwargs)`
+Update artifact metadata.
+
+#### `extend_ttl(artifact_id, additional_seconds)`
+Extend artifact TTL.
 
 ### Presigned URLs
 
@@ -585,6 +588,9 @@ Generate URLs with predefined durations (15min/1hr/24hr).
 
 #### `presign_upload(session_id=None, filename=None, mime_type="application/octet-stream", expires=3600)`
 Generate presigned URL for upload.
+
+#### `register_uploaded_artifact(artifact_id, *, mime, summary, ...)`
+Register metadata for presigned uploads.
 
 ### Batch Operations
 
@@ -599,23 +605,15 @@ Validate storage and session provider connectivity.
 #### `get_stats()`
 Get storage statistics and configuration info.
 
+### Grid Operations
+
+#### `get_canonical_prefix(session_id)`
+Get grid path prefix for session.
+
+#### `generate_artifact_key(session_id, artifact_id)`
+Generate grid artifact key.
+
 ## 🛠️ Advanced Features
-
-### Custom Providers
-```python
-# Create custom storage provider
-def my_custom_factory():
-    @asynccontextmanager
-    async def _ctx():
-        client = MyCustomClient()
-        try:
-            yield client
-        finally:
-            await client.close()
-    return _ctx
-
-store = ArtifactStore(s3_factory=my_custom_factory())
-```
 
 ### Error Handling
 ```python
@@ -623,7 +621,8 @@ from chuk_artifacts import (
     ArtifactNotFoundError,
     ArtifactExpiredError, 
     ProviderError,
-    ArtifactStoreError  # NEW: for session security violations
+    SessionError,
+    ArtifactStoreError  # For session security violations
 )
 
 try:
@@ -647,6 +646,18 @@ print(f"Session: {config_status['session']['status']}")
 stats = await store.get_stats()
 print(f"Provider: {stats['storage_provider']}")
 print(f"Bucket: {stats['bucket']}")
+print(f"Sandbox: {stats['sandbox_id']}")
+```
+
+### Context Manager Usage
+```python
+async with ArtifactStore() as store:
+    artifact_id = await store.store(
+        data=b"Temporary data",
+        mime="text/plain",
+        summary="Auto-cleanup example"
+    )
+    # Store automatically closed on exit
 ```
 
 ## 🤝 Contributing
@@ -654,7 +665,7 @@ print(f"Bucket: {stats['bucket']}")
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature-name`
 3. Make your changes
-4. Run tests: `uv run examples/artifact_smoke_test.py`
+4. Run tests: `uv run examples/mcp_test_demo.py`
 5. Test session operations: `uv run examples/session_operations_demo.py`
 6. Submit a pull request
 
@@ -662,26 +673,24 @@ print(f"Bucket: {stats['bucket']}")
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🔗 Links
-
-- **Documentation**: [docs.example.com](https://docs.example.com)
-- **Issue Tracker**: [github.com/your-org/chuk-artifacts/issues](https://github.com/your-org/chuk-artifacts/issues)
-- **PyPI**: [pypi.org/project/chuk-artifacts](https://pypi.org/project/chuk-artifacts)
-
 ## 🎯 Roadmap
 
 - [x] **Session-based security** with strict isolation
-- [x] **Directory-like operations** with prefix filtering
+- [x] **Grid architecture** with federation-ready paths
+- [x] **Modular design** with specialized operation modules
 - [x] **High-performance operations** (3,000+ ops/sec)
+- [x] **Directory-like operations** with prefix filtering
+- [x] **Comprehensive testing** with real-world scenarios
 - [ ] Azure Blob Storage provider
-- [ ] Google Cloud Storage provider
+- [ ] Google Cloud Storage provider  
 - [ ] Encryption at rest
 - [ ] Artifact versioning
 - [ ] Webhook notifications
 - [ ] Prometheus metrics export
+- [ ] Federation implementation
 
 ---
 
-**Made with ❤️ by the Chuk team**
+**Made with ❤️ for secure, scalable artifact storage**
 
-*Secure, fast, and reliable artifact storage for modern applications*
+*Production-ready artifact storage with mandatory session security and grid architecture*

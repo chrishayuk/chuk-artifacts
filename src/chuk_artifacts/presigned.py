@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import uuid, time, logging, json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
-from .base import BaseOperations
+if TYPE_CHECKING:
+    from .store import ArtifactStore
+
 from .exceptions import (
     ArtifactStoreError, ArtifactNotFoundError, ArtifactExpiredError, 
     ProviderError, SessionError
@@ -18,28 +20,31 @@ from .exceptions import (
 
 logger = logging.getLogger(__name__)
 
-_ANON_PREFIX = "anon"
 _DEFAULT_TTL = 900
 _DEFAULT_PRESIGN_EXPIRES = 3600
 
 
-class PresignedURLOperations(BaseOperations):
+class PresignedURLOperations:
     """Handles all presigned URL operations."""
+
+    def __init__(self, artifact_store: 'ArtifactStore'):
+        self.store = artifact_store
 
     async def presign(self, artifact_id: str, expires: int = _DEFAULT_PRESIGN_EXPIRES) -> str:
         """Generate a presigned URL for artifact download."""
-        self._check_closed()
+        if self.store._closed:
+            raise ArtifactStoreError("Store is closed")
         
         start_time = time.time()
         
         try:
             record = await self._get_record(artifact_id)
             
-            storage_ctx_mgr = self.s3_factory()
+            storage_ctx_mgr = self.store._s3_factory()
             async with storage_ctx_mgr as s3:
                 url = await s3.generate_presigned_url(
                     "get_object",
-                    Params={"Bucket": self.bucket, "Key": record["key"]},
+                    Params={"Bucket": self.store.bucket, "Key": record["key"]},
                     ExpiresIn=expires,
                 )
                 
@@ -96,22 +101,28 @@ class PresignedURLOperations(BaseOperations):
         expires: int = _DEFAULT_PRESIGN_EXPIRES
     ) -> tuple[str, str]:
         """Generate a presigned URL for uploading a new artifact."""
-        self._check_closed()
+        if self.store._closed:
+            raise ArtifactStoreError("Store is closed")
         
         start_time = time.time()
         
+        # Ensure session is allocated
+        if session_id is None:
+            session_id = await self.store._session_manager.allocate_session()
+        else:
+            session_id = await self.store._session_manager.allocate_session(session_id=session_id)
+        
         # Generate artifact ID and key path
         artifact_id = uuid.uuid4().hex
-        scope = session_id or f"{_ANON_PREFIX}_{artifact_id}"
-        key = f"sess/{scope}/{artifact_id}"
+        key = self.store.generate_artifact_key(session_id, artifact_id)
         
         try:
-            storage_ctx_mgr = self.s3_factory()
+            storage_ctx_mgr = self.store._s3_factory()
             async with storage_ctx_mgr as s3:
                 url = await s3.generate_presigned_url(
                     "put_object",
                     Params={
-                        "Bucket": self.bucket, 
+                        "Bucket": self.store.bucket, 
                         "Key": key,
                         "ContentType": mime_type
                     },
@@ -163,20 +174,26 @@ class PresignedURLOperations(BaseOperations):
         ttl: int = _DEFAULT_TTL,
     ) -> bool:
         """Register metadata for an artifact uploaded via presigned URL."""
-        self._check_closed()
+        if self.store._closed:
+            raise ArtifactStoreError("Store is closed")
         
         start_time = time.time()
         
+        # Ensure session is allocated
+        if session_id is None:
+            session_id = await self.store._session_manager.allocate_session()
+        else:
+            session_id = await self.store._session_manager.allocate_session(session_id=session_id)
+        
         # Reconstruct the key path
-        scope = session_id or f"{_ANON_PREFIX}_{artifact_id}"
-        key = f"sess/{scope}/{artifact_id}"
+        key = self.store.generate_artifact_key(session_id, artifact_id)
         
         try:
             # Verify the object exists and get its size
-            storage_ctx_mgr = self.s3_factory()
+            storage_ctx_mgr = self.store._s3_factory()
             async with storage_ctx_mgr as s3:
                 try:
-                    response = await s3.head_object(Bucket=self.bucket, Key=key)
+                    response = await s3.head_object(Bucket=self.store.bucket, Key=key)
                     file_size = response.get('ContentLength', 0)
                 except Exception:
                     logger.warning(f"Artifact {artifact_id} not found in storage")
@@ -184,7 +201,9 @@ class PresignedURLOperations(BaseOperations):
             
             # Build metadata record
             record = {
-                "scope": scope,
+                "artifact_id": artifact_id,
+                "session_id": session_id,
+                "sandbox_id": self.store.sandbox_id,
                 "key": key,
                 "mime": mime,
                 "summary": summary,
@@ -192,15 +211,15 @@ class PresignedURLOperations(BaseOperations):
                 "filename": filename,
                 "bytes": file_size,
                 "sha256": None,  # We don't have the hash since we didn't upload it directly
-                "stored_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                "stored_at": datetime.utcnow().isoformat() + "Z",
                 "ttl": ttl,
-                "storage_provider": self.storage_provider_name,
-                "session_provider": self.session_provider_name,
+                "storage_provider": self.store._storage_provider_name,
+                "session_provider": self.store._session_provider_name,
                 "uploaded_via_presigned": True,  # Flag to indicate upload method
             }
 
             # Cache metadata using session provider
-            session_ctx_mgr = self.session_factory()
+            session_ctx_mgr = self.store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, ttl, json.dumps(record))
 
@@ -265,3 +284,20 @@ class PresignedURLOperations(BaseOperations):
         )
         
         return upload_url, artifact_id
+
+    async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
+        """Get artifact metadata record."""
+        try:
+            session_ctx_mgr = self.store._session_factory()
+            async with session_ctx_mgr as session:
+                raw = await session.get(artifact_id)
+        except Exception as e:
+            raise SessionError(f"Session error for {artifact_id}: {e}") from e
+        
+        if raw is None:
+            raise ArtifactNotFoundError(f"Artifact {artifact_id} not found")
+        
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ProviderError(f"Corrupted metadata for {artifact_id}") from e

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chuk-artifacts"
-version = "0.1.2"
-description = "Add your description here"
+version = "0.1.3"
+description = "Chuk Artifacts provides a production-ready, modular artifact storage system that works seamlessly across multiple storage backends (memory, filesystem, AWS S3, IBM Cloud Object Storage) with Redis or memory-based metadata caching and strict session-based security."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -17,7 +17,7 @@ dependencies = [
   "aioboto3>=14.3.0",
   "redis>=6.2.0",
   "ibm-cos-sdk>=2.13.5",
-  "chuk-sessions>=0.1.0",
+  "chuk-sessions>=0.1.1",
 ]
 
 [project.optional-dependencies]

@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-# chuk_artifacts/session_operations.py (LOGGING FIX)
+# chuk_artifacts/session_operations.py
 """
 Session-based file operations with strict session isolation.
-FIXED: Resolved logging conflict with 'filename' parameter.
 """
 
 from __future__ import annotations
