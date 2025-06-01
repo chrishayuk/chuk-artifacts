@@ -2,6 +2,7 @@
 # chuk_artifacts/core.py
 """
 Clean core storage operations - grid architecture only.
+Now uses chuk_sessions for session management.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ class CoreStorageOperations:
     """Clean core storage operations with grid architecture."""
 
     def __init__(self, artifact_store: 'ArtifactStore'):
-        self.store = artifact_store
+        self.artifact_store = artifact_store
 
     async def store(
         self,
@@ -43,14 +44,14 @@ class CoreStorageOperations:
         ttl: int = _DEFAULT_TTL,
     ) -> str:
         """Store artifact with grid key generation."""
-        if self.store._closed:
+        if self.artifact_store._closed:
             raise ArtifactStoreError("Store is closed")
         
         start_time = time.time()
         artifact_id = uuid.uuid4().hex
         
-        # Generate grid key
-        key = self.store.generate_artifact_key(session_id, artifact_id)
+        # Generate grid key using chuk_sessions
+        key = self.artifact_store.generate_artifact_key(session_id, artifact_id)
         
         try:
             # Store in object storage
@@ -60,7 +61,7 @@ class CoreStorageOperations:
             record = {
                 "artifact_id": artifact_id,
                 "session_id": session_id,
-                "sandbox_id": self.store.sandbox_id,
+                "sandbox_id": self.artifact_store.sandbox_id,
                 "key": key,
                 "mime": mime,
                 "summary": summary,
@@ -70,12 +71,12 @@ class CoreStorageOperations:
                 "sha256": hashlib.sha256(data).hexdigest(),
                 "stored_at": datetime.utcnow().isoformat() + "Z",
                 "ttl": ttl,
-                "storage_provider": self.store._storage_provider_name,
-                "session_provider": self.store._session_provider_name,
+                "storage_provider": self.artifact_store._storage_provider_name,
+                "session_provider": self.artifact_store._session_provider_name,
             }
             
             # Store metadata
-            session_ctx_mgr = self.store._session_factory()
+            session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, ttl, json.dumps(record))
             
@@ -102,16 +103,16 @@ class CoreStorageOperations:
 
     async def retrieve(self, artifact_id: str) -> bytes:
         """Retrieve artifact data."""
-        if self.store._closed:
+        if self.artifact_store._closed:
             raise ArtifactStoreError("Store is closed")
         
         try:
             record = await self._get_record(artifact_id)
             
-            storage_ctx_mgr = self.store._s3_factory()
+            storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
                 response = await s3.get_object(
-                    Bucket=self.store.bucket, 
+                    Bucket=self.artifact_store.bucket, 
                     Key=record["key"]
                 )
                 
@@ -146,26 +147,26 @@ class CoreStorageOperations:
         """Store with retry logic."""
         last_exception = None
         
-        for attempt in range(self.store.max_retries):
+        for attempt in range(self.artifact_store.max_retries):
             try:
-                storage_ctx_mgr = self.store._s3_factory()
+                storage_ctx_mgr = self.artifact_store._s3_factory()
                 async with storage_ctx_mgr as s3:
                     await s3.put_object(
-                        Bucket=self.store.bucket,
+                        Bucket=self.artifact_store.bucket,
                         Key=key,
                         Body=data,
                         ContentType=mime,
                         Metadata={
                             "filename": filename or "",
                             "session_id": session_id,
-                            "sandbox_id": self.store.sandbox_id,
+                            "sandbox_id": self.artifact_store.sandbox_id,
                         },
                     )
                 return  # Success
                 
             except Exception as e:
                 last_exception = e
-                if attempt < self.store.max_retries - 1:
+                if attempt < self.artifact_store.max_retries - 1:
                     wait_time = 2 ** attempt
                     await asyncio.sleep(wait_time)
         
@@ -174,7 +175,7 @@ class CoreStorageOperations:
     async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
         """Get artifact metadata."""
         try:
-            session_ctx_mgr = self.store._session_factory()
+            session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 raw = await session.get(artifact_id)
         except Exception as e:

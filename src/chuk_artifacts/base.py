@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/base.py
 """
-base class for operation modules
+Base class for operation modules.
+Updated to work with chuk_sessions integration.
 """
 
 from __future__ import annotations
@@ -17,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 class BaseOperations:
-    """Fixed base class for all operation modules."""
+    """Base class for all operation modules."""
     
     def __init__(self, store: 'ArtifactStore'):
-        # FIXED: Renamed from self.store to self._artifact_store to avoid method name conflicts
+        # Store reference to artifact store
         self._artifact_store = store
     
     @property
@@ -46,6 +47,11 @@ class BaseOperations:
     @property
     def max_retries(self) -> int:
         return self._artifact_store.max_retries
+    
+    @property
+    def session_manager(self):
+        """Access to chuk_sessions SessionManager."""
+        return self._artifact_store._session_manager
     
     def _check_closed(self):
         """Check if store is closed and raise error if so."""

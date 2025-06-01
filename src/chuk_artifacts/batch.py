@@ -1,27 +1,31 @@
-# ===========================================================================
-# chuk_artifacts/batch.py - Batch operations
-# ===========================================================================
+# -*- coding: utf-8 -*-
+# chuk_artifacts/batch.py
 """
 Batch operations for multiple artifacts.
+Now uses chuk_sessions for session management.
 """
 
 from __future__ import annotations
 
-import uuid, hashlib, json, logging
+import uuid, hashlib, json, logging, asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from .base import BaseOperations
-from .exceptions import ArtifactStoreError
+if TYPE_CHECKING:
+    from .store import ArtifactStore
+
+from .exceptions import ArtifactStoreError, ProviderError, SessionError
 
 logger = logging.getLogger(__name__)
 
-_ANON_PREFIX = "anon"
 _DEFAULT_TTL = 900
 
 
-class BatchOperations(BaseOperations):
+class BatchOperations:
     """Handles batch operations for multiple artifacts."""
+
+    def __init__(self, artifact_store: 'ArtifactStore'):
+        self.artifact_store = artifact_store
 
     async def store_batch(
         self,
@@ -30,7 +34,14 @@ class BatchOperations(BaseOperations):
         ttl: int = _DEFAULT_TTL,
     ) -> List[str]:
         """Store multiple artifacts in a batch operation."""
-        self._check_closed()
+        if self.artifact_store._closed:
+            raise ArtifactStoreError("Store is closed")
+        
+        # Ensure session is allocated using chuk_sessions
+        if session_id is None:
+            session_id = await self.artifact_store._session_manager.allocate_session()
+        else:
+            session_id = await self.artifact_store._session_manager.allocate_session(session_id=session_id)
         
         artifact_ids = []
         failed_items = []
@@ -38,18 +49,19 @@ class BatchOperations(BaseOperations):
         for i, item in enumerate(items):
             try:
                 artifact_id = uuid.uuid4().hex
-                scope = session_id or f"{_ANON_PREFIX}_{artifact_id}"
-                key = f"sess/{scope}/{artifact_id}"
+                key = self.artifact_store.generate_artifact_key(session_id, artifact_id)
                 
                 # Store in object storage
                 await self._store_with_retry(
                     item["data"], key, item["mime"], 
-                    item.get("filename"), scope
+                    item.get("filename"), session_id
                 )
                 
                 # Prepare metadata record
                 record = {
-                    "scope": scope,
+                    "artifact_id": artifact_id,
+                    "session_id": session_id,
+                    "sandbox_id": self.artifact_store.sandbox_id,
                     "key": key,
                     "mime": item["mime"],
                     "summary": item["summary"],
@@ -57,14 +69,16 @@ class BatchOperations(BaseOperations):
                     "filename": item.get("filename"),
                     "bytes": len(item["data"]),
                     "sha256": hashlib.sha256(item["data"]).hexdigest(),
-                    "stored_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                    "stored_at": datetime.utcnow().isoformat() + "Z",
                     "ttl": ttl,
-                    "storage_provider": self.storage_provider_name,
-                    "session_provider": self.session_provider_name,
+                    "storage_provider": self.artifact_store._storage_provider_name,
+                    "session_provider": self.artifact_store._session_provider_name,
+                    "batch_operation": True,
+                    "batch_index": i,
                 }
                 
                 # Store metadata via session provider
-                session_ctx_mgr = self.session_factory()
+                session_ctx_mgr = self.artifact_store._session_factory()
                 async with session_ctx_mgr as session:
                     await session.setex(artifact_id, ttl, json.dumps(record))
                 
@@ -80,28 +94,30 @@ class BatchOperations(BaseOperations):
         
         return artifact_ids
 
-    async def _store_with_retry(self, data: bytes, key: str, mime: str, filename: str, scope: str):
+    async def _store_with_retry(self, data: bytes, key: str, mime: str, filename: str, session_id: str):
         """Store data with retry logic (copied from core for batch operations)."""
-        import asyncio
-        
         last_exception = None
         
-        for attempt in range(self.max_retries):
+        for attempt in range(self.artifact_store.max_retries):
             try:
-                storage_ctx_mgr = self.s3_factory()
+                storage_ctx_mgr = self.artifact_store._s3_factory()
                 async with storage_ctx_mgr as s3:
                     await s3.put_object(
-                        Bucket=self.bucket,
+                        Bucket=self.artifact_store.bucket,
                         Key=key,
                         Body=data,
                         ContentType=mime,
-                        Metadata={"filename": filename or "", "scope": scope},
+                        Metadata={
+                            "filename": filename or "", 
+                            "session_id": session_id,
+                            "sandbox_id": self.artifact_store.sandbox_id,
+                        },
                     )
                 return  # Success
                 
             except Exception as e:
                 last_exception = e
-                if attempt < self.max_retries - 1:
+                if attempt < self.artifact_store.max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff
                     logger.warning(
                         f"Batch storage attempt {attempt + 1} failed, retrying in {wait_time}s",
@@ -109,7 +125,6 @@ class BatchOperations(BaseOperations):
                     )
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error(f"All {self.max_retries} batch storage attempts failed")
+                    logger.error(f"All {self.artifact_store.max_retries} batch storage attempts failed")
         
         raise last_exception
-

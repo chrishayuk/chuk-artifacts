@@ -2,6 +2,7 @@
 # chuk_artifacts/metadata.py
 """
 Clean metadata operations for grid architecture.
+Now uses chuk_sessions for session management.
 """
 
 from __future__ import annotations
@@ -13,13 +14,13 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .store import ArtifactStore
 
-from .exceptions import ProviderError, SessionError
+from .exceptions import ProviderError, SessionError, ArtifactNotFoundError
 
 logger = logging.getLogger(__name__)
 
 
 class MetadataOperations:
-    """Clean metadata operations for grid architecture."""
+    """Clean metadata operations for grid architecture using chuk_sessions."""
 
     def __init__(self, artifact_store: 'ArtifactStore'):
         self.store = artifact_store
@@ -49,7 +50,7 @@ class MetadataOperations:
                     Key=record["key"]
                 )
             
-            # Delete metadata
+            # Delete metadata from session provider
             session_ctx_mgr = self.store._session_factory()
             async with session_ctx_mgr as session:
                 if hasattr(session, 'delete'):
@@ -63,10 +64,11 @@ class MetadataOperations:
             return False
 
     async def list_by_session(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-        """List artifacts in a session using grid prefix."""
+        """List artifacts in a session using grid prefix from chuk_sessions."""
         try:
             artifacts = []
-            prefix = f"grid/{self.store.sandbox_id}/{session_id}/"
+            # Use the session manager's canonical prefix instead of building our own
+            prefix = self.store._session_manager.get_canonical_prefix(session_id)
             
             storage_ctx_mgr = self.store._s3_factory()
             async with storage_ctx_mgr as s3:
@@ -79,10 +81,10 @@ class MetadataOperations:
                     
                     for obj in response.get('Contents', []):
                         key = obj['Key']
-                        # Extract artifact ID from key
-                        parts = key.split('/')
-                        if len(parts) >= 4:  # grid/sandbox/session/artifact_id
-                            artifact_id = parts[3]
+                        # Parse the grid key using chuk_sessions
+                        parsed = self.store._session_manager.parse_grid_key(key)
+                        if parsed and parsed.get('artifact_id'):
+                            artifact_id = parsed['artifact_id']
                             try:
                                 record = await self._get_record(artifact_id)
                                 artifacts.append(record)
@@ -155,7 +157,7 @@ class MetadataOperations:
                 if key not in ["summary", "meta"] and value is not None:
                     record[key] = value
             
-            # Store updated record
+            # Store updated record using session provider
             session_ctx_mgr = self.store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, record.get("ttl", 900), json.dumps(record))
@@ -181,7 +183,7 @@ class MetadataOperations:
             new_ttl = current_ttl + additional_seconds
             record["ttl"] = new_ttl
             
-            # Store updated record with new TTL
+            # Store updated record with new TTL using session provider
             session_ctx_mgr = self.store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, new_ttl, json.dumps(record))
@@ -193,7 +195,7 @@ class MetadataOperations:
             raise ProviderError(f"TTL extension failed: {e}") from e
 
     async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
-        """Get artifact metadata record."""
+        """Get artifact metadata record from session provider."""
         try:
             session_ctx_mgr = self.store._session_factory()
             async with session_ctx_mgr as session:
@@ -202,7 +204,7 @@ class MetadataOperations:
             raise SessionError(f"Session error for {artifact_id}: {e}") from e
         
         if raw is None:
-            raise ProviderError(f"Artifact {artifact_id} not found")
+            raise ArtifactNotFoundError(f"Artifact {artifact_id} not found")
         
         try:
             return json.loads(raw)

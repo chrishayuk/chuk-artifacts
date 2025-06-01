@@ -7,6 +7,7 @@ Grid Architecture:
 - Mandatory session allocation (no anonymous artifacts)
 - Grid paths: grid/{sandbox_id}/{session_id}/{artifact_id}
 - Clean, focused implementation
+- Now uses chuk_sessions for session management
 """
 
 from __future__ import annotations
@@ -32,7 +33,9 @@ except ImportError:
 
 # Import exceptions
 from .exceptions import ArtifactStoreError, ProviderError
-from .session.session_manager import SessionManager
+
+# Import chuk_sessions instead of local session manager
+from chuk_sessions.session_manager import SessionManager
 
 # Configure structured logging
 logger = logging.getLogger(__name__)
@@ -64,6 +67,7 @@ class ArtifactStore:
     - Always allocate a session (no anonymous artifacts)
     - Grid paths only: grid/{sandbox_id}/{session_id}/{artifact_id}
     - Clean, focused implementation
+    - Uses chuk_sessions for session management
     """
 
     def __init__(
@@ -93,10 +97,9 @@ class ArtifactStore:
         self._session_factory = self._load_session_provider(session_provider)
         self._session_provider_name = session_provider
         
-        # Session manager (always enabled)
+        # Session manager (now using chuk_sessions)
         self._session_manager = SessionManager(
             sandbox_id=self.sandbox_id,
-            session_factory=self._session_factory,
             default_ttl_hours=session_ttl_hours,
         )
         
@@ -140,17 +143,14 @@ class ArtifactStore:
         ttl: int = _DEFAULT_TTL,
     ) -> str:
         """Store artifact with mandatory session allocation."""
-        # Always allocate/validate session
+        # Always allocate/validate session using chuk_sessions
         session_id = await self._session_manager.allocate_session(
             session_id=session_id,
             user_id=user_id,
         )
         
-        # Work around the naming conflict in CoreStorageOperations
-        # where self.store is the artifact store instance, not the method
-        core_store_method = getattr(self._core.__class__, 'store')
-        return await core_store_method(
-            self._core,
+        # Store using core operations
+        return await self._core.store(
             data=data,
             mime=mime,
             summary=summary,
@@ -181,18 +181,20 @@ class ArtifactStore:
         return await self._metadata.list_by_session(session_id, limit)
 
     # ─────────────────────────────────────────────────────────────────
-    # Session operations
+    # Session operations - now delegated to chuk_sessions
     # ─────────────────────────────────────────────────────────────────
 
     async def create_session(
         self,
         user_id: Optional[str] = None,
         ttl_hours: Optional[int] = None,
+        custom_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Create a new session."""
         return await self._session_manager.allocate_session(
             user_id=user_id,
             ttl_hours=ttl_hours,
+            custom_metadata=custom_metadata,
         )
 
     async def validate_session(self, session_id: str) -> bool:
@@ -203,8 +205,32 @@ class ArtifactStore:
         """Get session information."""
         return await self._session_manager.get_session_info(session_id)
 
+    async def update_session_metadata(
+        self,
+        session_id: str,
+        metadata: Dict[str, Any]
+    ) -> bool:
+        """Update session metadata."""
+        return await self._session_manager.update_session_metadata(session_id, metadata)
+
+    async def extend_session_ttl(
+        self,
+        session_id: str,
+        additional_hours: int
+    ) -> bool:
+        """Extend session TTL."""
+        return await self._session_manager.extend_session_ttl(session_id, additional_hours)
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete session."""
+        return await self._session_manager.delete_session(session_id)
+
+    async def cleanup_expired_sessions(self) -> int:
+        """Clean up expired sessions."""
+        return await self._session_manager.cleanup_expired_sessions()
+
     # ─────────────────────────────────────────────────────────────────
-    # Grid operations
+    # Grid operations - now delegated to chuk_sessions
     # ─────────────────────────────────────────────────────────────────
 
     def get_canonical_prefix(self, session_id: str) -> str:
@@ -214,6 +240,14 @@ class ArtifactStore:
     def generate_artifact_key(self, session_id: str, artifact_id: str) -> str:
         """Generate grid artifact key."""
         return self._session_manager.generate_artifact_key(session_id, artifact_id)
+
+    def parse_grid_key(self, grid_key: str) -> Optional[Dict[str, Any]]:
+        """Parse grid key to extract components."""
+        return self._session_manager.parse_grid_key(grid_key)
+
+    def get_session_prefix_pattern(self) -> str:
+        """Get session prefix pattern for this sandbox."""
+        return self._session_manager.get_session_prefix_pattern()
 
     # ─────────────────────────────────────────────────────────────────
     # File operations
@@ -506,7 +540,13 @@ class ArtifactStore:
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get storage statistics."""
-        return await self._admin.get_stats()
+        stats = await self._admin.get_stats()
+        
+        # Add session manager stats
+        session_stats = self._session_manager.get_cache_stats()
+        stats["session_manager"] = session_stats
+        
+        return stats
 
     # ─────────────────────────────────────────────────────────────────
     # Helpers

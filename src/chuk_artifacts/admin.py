@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/admin.py
 """
-Administrative and debugging operations
+Administrative and debugging operations.
+Now includes chuk_sessions integration.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ class AdminOperations:
     """Handles administrative and debugging operations."""
 
     def __init__(self, artifact_store: 'ArtifactStore'):
-        self.store = artifact_store
+        self.artifact_store = artifact_store
 
     async def validate_configuration(self) -> Dict[str, Any]:
         """Validate store configuration and connectivity."""
@@ -70,11 +71,39 @@ class AdminOperations:
                 "provider": self.store._storage_provider_name
             }
         
+        # Test session manager (chuk_sessions)
+        try:
+            # Try to allocate a test session
+            test_session = await self.store._session_manager.allocate_session(
+                user_id="test_admin_user"
+            )
+            # Validate it
+            is_valid = await self.store._session_manager.validate_session(test_session)
+            # Clean up
+            await self.store._session_manager.delete_session(test_session)
+            
+            if is_valid:
+                results["session_manager"] = {
+                    "status": "ok",
+                    "sandbox_id": self.store.sandbox_id,
+                    "test_session": test_session
+                }
+            else:
+                results["session_manager"] = {
+                    "status": "error",
+                    "message": "Session validation failed"
+                }
+        except Exception as e:
+            results["session_manager"] = {
+                "status": "error",
+                "message": str(e)
+            }
+        
         return results
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get storage statistics."""
-        return {
+        base_stats = {
             "storage_provider": self.store._storage_provider_name,
             "session_provider": self.store._session_provider_name,
             "bucket": self.store.bucket,
@@ -82,4 +111,47 @@ class AdminOperations:
             "closed": self.store._closed,
             "sandbox_id": self.store.sandbox_id,
             "session_ttl_hours": self.store.session_ttl_hours,
+        }
+        
+        # Add session manager stats from chuk_sessions
+        try:
+            session_stats = self.store._session_manager.get_cache_stats()
+            base_stats["session_manager"] = session_stats
+        except Exception as e:
+            base_stats["session_manager"] = {
+                "error": str(e),
+                "status": "unavailable"
+            }
+        
+        return base_stats
+
+    async def cleanup_all_expired(self) -> Dict[str, int]:
+        """Clean up all expired resources."""
+        results = {"timestamp": datetime.utcnow().isoformat() + "Z"}
+        
+        # Clean up expired sessions using chuk_sessions
+        try:
+            expired_sessions = await self.store._session_manager.cleanup_expired_sessions()
+            results["expired_sessions_cleaned"] = expired_sessions
+        except Exception as e:
+            results["session_cleanup_error"] = str(e)
+            results["expired_sessions_cleaned"] = 0
+        
+        # TODO: Add artifact cleanup based on TTL
+        # This would require scanning metadata to find expired artifacts
+        results["expired_artifacts_cleaned"] = 0  # Placeholder
+        
+        return results
+
+    async def get_sandbox_info(self) -> Dict[str, Any]:
+        """Get information about the current sandbox."""
+        return {
+            "sandbox_id": self.store.sandbox_id,
+            "session_prefix_pattern": self.store.get_session_prefix_pattern(),
+            "grid_architecture": {
+                "enabled": True,
+                "pattern": "grid/{sandbox_id}/{session_id}/{artifact_id}",
+                "mandatory_sessions": True,
+                "federation_ready": True
+            }
         }
