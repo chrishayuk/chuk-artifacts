@@ -23,7 +23,7 @@ class MetadataOperations:
     """Clean metadata operations for grid architecture using chuk_sessions."""
 
     def __init__(self, artifact_store: 'ArtifactStore'):
-        self.store = artifact_store
+        self.artifact_store = artifact_store
 
     async def get_metadata(self, artifact_id: str) -> Dict[str, Any]:
         """Get artifact metadata."""
@@ -43,15 +43,15 @@ class MetadataOperations:
             record = await self._get_record(artifact_id)
             
             # Delete from storage
-            storage_ctx_mgr = self.store._s3_factory()
+            storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
                 await s3.delete_object(
-                    Bucket=self.store.bucket, 
+                    Bucket=self.artifact_store.bucket, 
                     Key=record["key"]
                 )
             
             # Delete metadata from session provider
-            session_ctx_mgr = self.store._session_factory()
+            session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 if hasattr(session, 'delete'):
                     await session.delete(artifact_id)
@@ -68,13 +68,13 @@ class MetadataOperations:
         try:
             artifacts = []
             # Use the session manager's canonical prefix instead of building our own
-            prefix = self.store._session_manager.get_canonical_prefix(session_id)
+            prefix = self.artifact_store._session_manager.get_canonical_prefix(session_id)
             
-            storage_ctx_mgr = self.store._s3_factory()
+            storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
                 if hasattr(s3, 'list_objects_v2'):
                     response = await s3.list_objects_v2(
-                        Bucket=self.store.bucket,
+                        Bucket=self.artifact_store.bucket,
                         Prefix=prefix,
                         MaxKeys=limit
                     )
@@ -82,7 +82,7 @@ class MetadataOperations:
                     for obj in response.get('Contents', []):
                         key = obj['Key']
                         # Parse the grid key using chuk_sessions
-                        parsed = self.store._session_manager.parse_grid_key(key)
+                        parsed = self.artifact_store._session_manager.parse_grid_key(key)
                         if parsed and parsed.get('artifact_id'):
                             artifact_id = parsed['artifact_id']
                             try:
@@ -158,7 +158,7 @@ class MetadataOperations:
                     record[key] = value
             
             # Store updated record using session provider
-            session_ctx_mgr = self.store._session_factory()
+            session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, record.get("ttl", 900), json.dumps(record))
             
@@ -184,7 +184,7 @@ class MetadataOperations:
             record["ttl"] = new_ttl
             
             # Store updated record with new TTL using session provider
-            session_ctx_mgr = self.store._session_factory()
+            session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, new_ttl, json.dumps(record))
             
@@ -197,7 +197,7 @@ class MetadataOperations:
     async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
         """Get artifact metadata record from session provider."""
         try:
-            session_ctx_mgr = self.store._session_factory()
+            session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 raw = await session.get(artifact_id)
         except Exception as e:
