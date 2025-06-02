@@ -272,7 +272,7 @@ wheels = [
 
 [[package]]
 name = "chuk-artifacts"
-version = "0.1.4"
+version = "0.1.6"
 source = { editable = "." }
 dependencies = [
     { name = "aioboto3" },
@@ -297,7 +297,7 @@ websocket = [
 [package.metadata]
 requires-dist = [
     { name = "aioboto3", specifier = ">=14.3.0" },
-    { name = "chuk-sessions", specifier = ">=0.1.1" },
+    { name = "chuk-sessions", specifier = ">=0.1.2" },
     { name = "chuk-tool-processor", specifier = ">=0.1.7" },
     { name = "ibm-cos-sdk", specifier = ">=2.13.5" },
     { name = "pydantic", specifier = ">=2.10.6" },
@@ -325,7 +325,7 @@ wheels = [
 
 [[package]]
 name = "chuk-sessions"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -333,7 +333,7 @@ dependencies = [
     { name = "redis" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/09/1fdc59f1c961418474b95764d23d6f64de9b22ac8379c35f60aa13fac7e7/chuk_sessions-0.1.1-py3-none-any.whl", hash = "sha256:96b4857441b24d03470edf25fca2fb0082c2584a655c70a11d9fac4ec296d64f", size = 18721 },
+    { url = "https://files.pythonhosted.org/packages/a1/af/14afbd4401ca0911054c09e6c5b8264caa1a720f83d92cc18d90fe4f9fc6/chuk_sessions-0.1.2-py3-none-any.whl", hash = "sha256:70efde1792a6714a9b8ea7c2746d150e40c7c9ee7959394cb0edf1c2b7738486", size = 18933 },
 ]
 
 [[package]]
