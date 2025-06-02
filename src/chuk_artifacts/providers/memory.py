@@ -279,11 +279,11 @@ def factory(shared_store: Optional[Dict[str, Dict[str, Any]]] = None) -> Callabl
     async def _ctx():
         client = _MemoryS3Client(shared_store=shared_store)
         try:
-            yield client
+            yield client              # ← hand the live client back to caller
         finally:
-            await client.close()
+            await client.close()      # ← clean up when context exits
 
-    return _ctx
+    return _ctx 
 
 
 # ---- convenience functions for testing ------------------------------------

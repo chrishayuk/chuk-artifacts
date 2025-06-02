@@ -15,6 +15,8 @@ from __future__ import annotations
 import os, logging, uuid
 from datetime import datetime
 from typing import Any, Dict, List, Callable, AsyncContextManager, Optional, Union
+from chuk_sessions.session_manager import SessionManager
+from .grid import canonical_prefix, artifact_key, parse
 
 try:
     import aioboto3
@@ -235,19 +237,19 @@ class ArtifactStore:
 
     def get_canonical_prefix(self, session_id: str) -> str:
         """Get grid path prefix for session."""
-        return self._session_manager.get_canonical_prefix(session_id)
+        return canonical_prefix(self.sandbox_id, session_id)
 
     def generate_artifact_key(self, session_id: str, artifact_id: str) -> str:
         """Generate grid artifact key."""
-        return self._session_manager.generate_artifact_key(session_id, artifact_id)
+        return artifact_key(self.sandbox_id, session_id, artifact_id)
 
     def parse_grid_key(self, grid_key: str) -> Optional[Dict[str, Any]]:
         """Parse grid key to extract components."""
-        return self._session_manager.parse_grid_key(grid_key)
+        return parse(grid_key)
 
     def get_session_prefix_pattern(self) -> str:
         """Get session prefix pattern for this sandbox."""
-        return self._session_manager.get_session_prefix_pattern()
+        return f"grid/{self.sandbox_id}/"
 
     # ─────────────────────────────────────────────────────────────────
     # File operations

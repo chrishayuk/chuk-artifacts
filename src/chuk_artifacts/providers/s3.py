@@ -56,12 +56,12 @@ def factory(
         session = aioboto3.Session()
         async with session.client(
             "s3",
-            endpoint_url=endpoint_url,
-            region_name=region,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
+            endpoint_url           = endpoint_url,
+            region_name            = region,
+            aws_access_key_id      = access_key,
+            aws_secret_access_key  = secret_key,
         ) as client:
-            yield client
+            yield client  # ← the channel to real S3 / MinIO
     
     return _ctx
 
