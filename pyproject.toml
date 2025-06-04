@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chuk-artifacts"
-version = "0.2.1"
+version = "0.2.2"
 description = "Chuk Artifacts provides a production-ready, modular artifact storage system that works seamlessly across multiple storage backends (memory, filesystem, AWS S3, IBM Cloud Object Storage) with Redis or memory-based metadata caching and strict session-based security."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 
 dependencies = [
-  "chuk-tool-processor>=0.1.7",
+  "chuk-tool-processor>=0.4",
   "pydantic>=2.10.6",
   "pyyaml>=6.0.2",
   "aioboto3>=14.3.0",

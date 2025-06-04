@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Test configurations: (session_provider, storage_provider, description)
-TEST_CONFIGS = [
+check_CONFIGS = [
     ("memory", "filesystem", "Memory metadata + filesystem storage (recommended for testing)"),
     ("redis", "filesystem", "Redis metadata + filesystem storage"),
     ("redis", "memory", "Redis metadata + memory storage (memory provider has isolation issues)"),
@@ -36,7 +36,7 @@ TEST_CONFIGS = [
 ]
 
 # Test data
-TEST_DATA = [
+check_DATA = [
     (b"Hello, artifact!", "text/plain", "test-hello.txt", "Basic text file"),
     (b'{"test": "json"}', "application/json", "test.json", "JSON data"),
     (b"\x89PNG\r\n\x1a\n" + b"fake png data" * 10, "image/png", "test.png", "Binary image data"),
@@ -71,7 +71,7 @@ class TestResult:
                 print(f"  {error}")
 
 
-async def test_store_configuration(
+async def check_store_configuration(
     session_provider: str, 
     storage_provider: str, 
     temp_dir: Path,
@@ -131,21 +131,21 @@ async def test_store_configuration(
         return None, {}
 
 
-async def test_basic_operations(store: ArtifactStore, results: TestResult) -> List[str]:
+async def check_basic_operations(store: ArtifactStore, results: TestResult) -> List[str]:
     """Test basic store/retrieve/metadata operations."""
     artifact_ids = []
     
-    for data, mime, filename, description in TEST_DATA:
+    for data, mime, filename, description in check_DATA:
         try:
             # Store artifact with test session ID to organize in test folder
-            test_session_id = "smoke_test"
+            check_session_id = "smoke_test"
             artifact_id = await store.store(
                 data=data,
                 mime=mime,
                 summary=description,
                 filename=filename,
                 meta={"test": True, "size": len(data)},
-                session_id=test_session_id  # This creates sess/smoke_test/ folder structure
+                session_id=check_session_id  # This creates sess/smoke_test/ folder structure
             )
             artifact_ids.append(artifact_id)
             
@@ -185,7 +185,7 @@ async def test_basic_operations(store: ArtifactStore, results: TestResult) -> Li
     return artifact_ids
 
 
-async def test_presigned_urls(
+async def check_presigned_urls(
     store: ArtifactStore, 
     artifact_ids: List[str], 
     storage_provider: str,
@@ -213,7 +213,7 @@ async def test_presigned_urls(
                 async with session.get(medium_url) as resp:
                     if resp.status == 200:
                         content = await resp.read()
-                        if content == TEST_DATA[0][0]:  # First test data
+                        if content == check_DATA[0][0]:  # First test data
                             results.success(f"HTTP download via presigned URL")
                         else:
                             results.failure(f"Downloaded content mismatch")
@@ -243,7 +243,7 @@ async def test_presigned_urls(
             results.failure(f"Presigned URL test failed", e)
 
 
-async def test_batch_operations(store: ArtifactStore, results: TestResult):
+async def check_batch_operations(store: ArtifactStore, results: TestResult):
     """Test batch storage operations."""
     try:
         batch_items = [
@@ -294,7 +294,7 @@ async def test_batch_operations(store: ArtifactStore, results: TestResult):
             results.failure(f"Batch operations failed", e)
 
 
-async def test_error_handling(store: ArtifactStore, results: TestResult):
+async def check_error_handling(store: ArtifactStore, results: TestResult):
     """Test error handling for various failure scenarios."""
     try:
         # Test non-existent artifact
@@ -328,7 +328,7 @@ async def test_error_handling(store: ArtifactStore, results: TestResult):
         results.failure(f"Error handling test failed", e)
 
 
-async def test_provider_combination(
+async def check_provider_combination(
     session_provider: str, 
     storage_provider: str, 
     description: str,
@@ -354,7 +354,7 @@ async def test_provider_combination(
     
     else:
         # Initialize and validate configuration normally
-        store, config = await test_store_configuration(
+        store, config = await check_store_configuration(
             session_provider, storage_provider, temp_dir, results
         )
         
@@ -363,16 +363,16 @@ async def test_provider_combination(
     
     try:
         # Test basic operations
-        artifact_ids = await test_basic_operations(store, results)
+        artifact_ids = await check_basic_operations(store, results)
         
         # Test presigned URLs
-        await test_presigned_urls(store, artifact_ids, storage_provider, results)
+        await check_presigned_urls(store, artifact_ids, storage_provider, results)
         
         # Test batch operations
-        await test_batch_operations(store, results)
+        await check_batch_operations(store, results)
         
         # Test error handling
-        await test_error_handling(store, results)
+        await check_error_handling(store, results)
         
         # Get stats
         stats = await store.get_stats()
@@ -390,12 +390,12 @@ async def main():
     results = TestResult()
     
     # Create temporary directory for filesystem tests
-    temp_dir = Path(tempfile.mkdtemp(prefix="artifact_test_"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="artifact_check_"))
     
     try:
         # Test each provider combination
-        for session_provider, storage_provider, description in TEST_CONFIGS:
-            await test_provider_combination(
+        for session_provider, storage_provider, description in check_CONFIGS:
+            await check_provider_combination(
                 session_provider, storage_provider, description, temp_dir, results
             )
         

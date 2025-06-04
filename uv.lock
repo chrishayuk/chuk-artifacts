@@ -272,7 +272,7 @@ wheels = [
 
 [[package]]
 name = "chuk-artifacts"
-version = "0.2"
+version = "0.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "aioboto3" },
@@ -298,7 +298,7 @@ websocket = [
 requires-dist = [
     { name = "aioboto3", specifier = ">=14.3.0" },
     { name = "chuk-sessions", specifier = ">=0.2" },
-    { name = "chuk-tool-processor", specifier = ">=0.1.7" },
+    { name = "chuk-tool-processor", specifier = ">=0.4" },
     { name = "ibm-cos-sdk", specifier = ">=2.13.5" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
@@ -338,7 +338,7 @@ wheels = [
 
 [[package]]
 name = "chuk-tool-processor"
-version = "0.1.7"
+version = "0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "chuk-mcp" },
@@ -347,8 +347,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "uuid" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/71/fe/5b433d29d66eee42ef45f598adafde1ea45a726f8c6cd4efd655b7ad3f91/chuk_tool_processor-0.4.tar.gz", hash = "sha256:5b07e6126ee9b20dbe5772cfe5985855fbcf6abb95725635d2003085d7398964", size = 78741 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/88/062ce8e1af577ac5ade19c957fbcce8bf01da6ffdd1f5206ea4b3fdc3571/chuk_tool_processor-0.1.7-py3-none-any.whl", hash = "sha256:09b3c0a7a6c3bc73da4eaa7cc6fed8d3d766ada12a3cc85c6eab63301577e130", size = 88105 },
+    { url = "https://files.pythonhosted.org/packages/1d/2f/ea23b36b7bb5bf20047600d48ab8887c6eb256539649268d25af9099f425/chuk_tool_processor-0.4-py3-none-any.whl", hash = "sha256:3a6a4fb203510855d49a499dbd25227c6e51c84cd415c716f7b0539db13d1d26", size = 97631 },
 ]
 
 [[package]]
