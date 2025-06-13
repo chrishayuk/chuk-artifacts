@@ -12,7 +12,9 @@ Grid Architecture:
 
 from __future__ import annotations
 
-import os, logging, uuid
+import os
+import logging
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Callable, AsyncContextManager, Optional, Union
 from chuk_sessions.session_manager import SessionManager
@@ -37,7 +39,6 @@ except ImportError:
 from .exceptions import ArtifactStoreError, ProviderError
 
 # Import chuk_sessions instead of local session manager
-from chuk_sessions.session_manager import SessionManager
 
 # Configure structured logging
 logger = logging.getLogger(__name__)
@@ -160,6 +161,32 @@ class ArtifactStore:
             filename=filename,
             session_id=session_id,
             ttl=ttl,
+        )
+    
+    async def update_file(
+        self,
+        artifact_id: str,
+        *,
+        data: Optional[bytes] = None,
+        meta: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+        summary: Optional[str] = None,
+        mime: Optional[str] = None,
+    ) -> bool:
+        """
+        Update an artifact's content, metadata, filename, summary, or mime type.
+        All parameters are optional. At least one must be provided.
+        """
+        if not any([data, meta, filename, summary, mime]):
+            raise ValueError("At least one update parameter must be provided.")
+
+        return await self._core.update_file(
+            artifact_id=artifact_id,
+            new_data=data,
+            meta=meta,
+            filename=filename,
+            summary=summary,
+            mime=mime,
         )
 
     async def retrieve(self, artifact_id: str) -> bytes:
