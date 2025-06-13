@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .store import ArtifactStore
@@ -68,7 +68,7 @@ class MetadataOperations:
         try:
             artifacts = []
             # Use the session manager's canonical prefix instead of building our own
-            prefix = self.artifact_store._session_manager.get_canonical_prefix(session_id)
+            prefix = self.artifact_store.get_canonical_prefix(session_id)
             
             storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
@@ -82,7 +82,7 @@ class MetadataOperations:
                     for obj in response.get('Contents', []):
                         key = obj['Key']
                         # Parse the grid key using chuk_sessions
-                        parsed = self.artifact_store._session_manager.parse_grid_key(key)
+                        parsed = self.artifact_store.parse_grid_key(key)
                         if parsed and parsed.get('artifact_id'):
                             artifact_id = parsed['artifact_id']
                             try:
@@ -93,7 +93,7 @@ class MetadataOperations:
                     
                     return artifacts[:limit]
             
-            logger.warning(f"Storage provider doesn't support listing")
+            logger.warning("Storage provider doesn't support listing")
             return []
             
         except Exception as e:
