@@ -47,11 +47,11 @@ async with ArtifactStore() as store:
         filename="hello.txt"
         # session_id auto-allocated if not provided
     )
-
+    
     # Retrieve it
     data = await store.retrieve(artifact_id)
     print(data.decode())  # "Hello, world!"
-
+    
     # Generate a presigned URL
     download_url = await store.presign_medium(artifact_id)  # 1 hour
 ```
@@ -67,25 +67,25 @@ async with ArtifactStore() as store:
         mime="text/markdown",
         session_id="user_alice"
     )
-
+    
     # List files in a session
     files = await store.list_by_session("user_alice")
     print(f"Alice has {len(files)} files")
-
+    
     # List directory-like contents
     docs = await store.get_directory_contents("user_alice", "docs/")
     print(f"Alice's docs: {len(docs)} files")
-
+    
     # Copy within same session (allowed)
     backup_id = await store.copy_file(
         doc_id,
         new_filename="docs/private_backup.md"
     )
-
+    
     # Cross-session operations are BLOCKED for security
     try:
         await store.copy_file(
-            doc_id,
+            doc_id, 
             target_session_id="user_bob"  # This will fail
         )
     except ArtifactStoreError:
@@ -120,7 +120,7 @@ Chuk Artifacts uses a clean modular architecture with specialized operation modu
 ArtifactStore (Main Coordinator)
 ├── CoreStorageOperations     # store() and retrieve()
 ├── MetadataOperations        # metadata, exists, delete, update, list operations
-├── PresignedURLOperations    # URL generation and upload workflows
+├── PresignedURLOperations    # URL generation and upload workflows  
 ├── BatchOperations          # store_batch() for multiple files
 └── AdminOperations          # validate_configuration, get_stats
 ```
@@ -134,14 +134,12 @@ grid/{sandbox_id}/{session_id}/{artifact_id}
 ```
 
 **Benefits:**
-
 - **Federation Ready**: Cross-sandbox discovery and routing
 - **Session Isolation**: Clear boundaries for security
 - **Predictable Paths**: Easy to understand and manage
 - **Scalable**: Handles multi-tenant applications
 
 This design provides:
-
 - **Better testability**: Each module can be tested independently
 - **Enhanced maintainability**: Clear separation of concerns
 - **Easy extensibility**: Add new operation types without touching core
@@ -150,7 +148,6 @@ This design provides:
 ## 🔒 Session-Based Security
 
 ### Mandatory Sessions
-
 ```python
 # Every artifact belongs to a session - no anonymous artifacts
 artifact_id = await store.store(
@@ -166,7 +163,6 @@ session_id = metadata["session_id"]
 ```
 
 ### Strict Session Isolation
-
 ```python
 # Users can only access their own files
 alice_files = await store.list_by_session("user_alice")
@@ -178,7 +174,6 @@ await store.move_file(alice_file_id, new_session_id="user_bob")     # ❌ Blocke
 ```
 
 ### Multi-Tenant Safe
-
 ```python
 # Perfect for SaaS applications
 company_a_files = await store.list_by_session("company_a")
@@ -191,24 +186,20 @@ company_b_files = await store.list_by_session("company_b")
 ## 📦 Storage Providers
 
 ### Memory Provider
-
 ```python
 store = ArtifactStore(storage_provider="memory")
 ```
-
 - Perfect for development and testing
 - Zero configuration required
 - Non-persistent (data lost on restart)
 - **Note**: Provider isolation limitations for testing
 
 ### Filesystem Provider
-
 ```python
 store = ArtifactStore(storage_provider="filesystem")
 # Set root directory
 os.environ["ARTIFACT_FS_ROOT"] = "./my-artifacts"
 ```
-
 - Local disk storage
 - Persistent across restarts
 - `file://` URLs for local access
@@ -216,7 +207,6 @@ os.environ["ARTIFACT_FS_ROOT"] = "./my-artifacts"
 - Great for development and staging
 
 ### AWS S3 Provider
-
 ```python
 store = ArtifactStore(storage_provider="s3")
 # Configure via environment
@@ -227,7 +217,6 @@ os.environ.update({
     "ARTIFACT_BUCKET": "my-bucket"
 })
 ```
-
 - Industry-standard cloud storage
 - Native presigned URL support
 - Highly scalable and durable
@@ -235,7 +224,6 @@ os.environ.update({
 - Perfect for production workloads
 
 ### IBM Cloud Object Storage
-
 ```python
 # HMAC authentication
 store = ArtifactStore(storage_provider="ibm_cos")
@@ -256,22 +244,18 @@ os.environ.update({
 ## 🗃️ Session Providers
 
 ### Memory Sessions
-
 ```python
 store = ArtifactStore(session_provider="memory")
 ```
-
 - In-memory metadata storage
 - Fast but non-persistent
 - Perfect for testing
 
 ### Redis Sessions
-
 ```python
 store = ArtifactStore(session_provider="redis")
 os.environ["SESSION_REDIS_URL"] = "redis://localhost:6379/0"
 ```
-
 - Persistent metadata storage
 - Shared across multiple instances
 - Production-ready caching
@@ -332,7 +316,7 @@ async def upload_file(file_content: bytes, filename: str, content_type: str, use
         filename=filename,
         session_id=f"user_{user_id}"  # User-specific session
     )
-
+    
     # Return download URL
     download_url = await store.presign_medium(artifact_id)
     return {
@@ -390,7 +374,7 @@ items = [
     },
     {
         "data": file2_content,
-        "mime": "image/png",
+        "mime": "image/png", 
         "summary": "Product image 2",
         "filename": "images/product2.png"
     }
@@ -403,7 +387,6 @@ artifact_ids = await store.store_batch(items, session_id="product-catalog")
 ## 🧪 Testing
 
 ### Run All Tests
-
 ```bash
 # MCP server scenarios (recommended)
 uv run examples/mcp_test_demo.py
@@ -419,9 +402,7 @@ uv run examples/complete_verification.py
 ```
 
 ### Test Results
-
 Recent test results show excellent performance:
-
 ```
 📤 Test 1: Rapid file creation...
 ✅ Created 20 files in 0.006s (3,083 files/sec)
@@ -440,7 +421,6 @@ Recent test results show excellent performance:
 ```
 
 ### Development Setup
-
 ```python
 from chuk_artifacts.config import development_setup
 
@@ -448,7 +428,6 @@ store = development_setup()  # Uses memory providers
 ```
 
 ### Testing Setup
-
 ```python
 from chuk_artifacts.config import testing_setup
 
@@ -466,7 +445,7 @@ ARTIFACT_BUCKET=my-artifacts       # Bucket/container name
 ARTIFACT_FS_ROOT=./artifacts       # Filesystem root (filesystem provider)
 ARTIFACT_SANDBOX_ID=my-app         # Sandbox identifier for multi-tenancy
 
-# Session configuration
+# Session configuration  
 SESSION_PROVIDER=redis             # memory, redis
 SESSION_REDIS_URL=redis://localhost:6379/0
 
@@ -512,10 +491,9 @@ store = ArtifactStore()
 - **Grid Architecture**: Optimized session-based queries
 
 ### Performance Benchmarks
-
 ```
 ✅ File Creation: 3,083 files/sec
-✅ File Reading: 4,693 reads/sec
+✅ File Reading: 4,693 reads/sec  
 ✅ File Copying: 1,811 copies/sec
 ✅ Session Listing: ~0.002s for 20+ files
 ✅ Directory Listing: ~0.002s for filtered results
@@ -533,15 +511,14 @@ store = ArtifactStore()
 - **Error Handling**: No sensitive data in logs or exceptions
 
 ### Security Validation
-
 ```python
 # All these operations are blocked for security
 await store.copy_file(user_a_file, target_session_id="user_b")  # ❌ Blocked
-await store.move_file(user_a_file, new_session_id="user_b")     # ❌ Blocked
+await store.move_file(user_a_file, new_session_id="user_b")     # ❌ Blocked  
 
 # Security test results:
 # ✅ Cross-session copy correctly blocked
-# ✅ Cross-session move correctly blocked
+# ✅ Cross-session move correctly blocked  
 # ✅ Cross-session overwrite correctly blocked
 # 🛡️ ALL SECURITY TESTS PASSED!
 ```
@@ -551,127 +528,101 @@ await store.move_file(user_a_file, new_session_id="user_b")     # ❌ Blocked
 ### Core Methods
 
 #### `store(data, *, mime, summary, meta=None, filename=None, session_id=None, user_id=None, ttl=900)`
-
 Store artifact data with metadata. Session auto-allocated if not provided.
 
 #### `retrieve(artifact_id)`
-
 Retrieve artifact data by ID.
 
 #### `metadata(artifact_id)`
-
 Get artifact metadata.
 
 #### `exists(artifact_id)` / `delete(artifact_id)`
-
 Check existence or delete artifacts.
 
 ### Session Operations
 
 #### `create_session(user_id=None, ttl_hours=None)`
-
 Create a new session explicitly.
 
 #### `validate_session(session_id)` / `get_session_info(session_id)`
-
 Session validation and information retrieval.
 
 #### `list_by_session(session_id, limit=100)`
-
 List all artifacts in a session.
 
 #### `get_directory_contents(session_id, directory_prefix="", limit=100)`
-
 Get files in a directory-like structure.
 
 ### File Operations
 
 #### `write_file(content, *, filename, mime="text/plain", session_id=None, ...)`
-
 Write content to new file.
 
 #### `read_file(artifact_id, *, encoding="utf-8", as_text=True)`
-
 Read file content directly as text or binary.
 
 #### `copy_file(artifact_id, *, new_filename=None, new_meta=None, summary=None)`
-
 Copy file within same session only (cross-session blocked).
 
 #### `move_file(artifact_id, *, new_filename=None, new_meta=None)`
-
 Move/rename file within same session only (cross-session blocked).
 
 #### `list_files(session_id, prefix="", limit=100)`
-
 List files with optional prefix filtering.
 
 #### `update_file(artifact_id, *, data=None, meta=None, filename=None, summary=None, mime=None)`
-
 Update artifact content, metadata, filename, summary, or MIME type. At least one field must be specified for update.
 
 ### Metadata Operations
 
 #### `update_metadata(artifact_id, *, summary=None, meta=None, merge=True, **kwargs)`
-
 Update artifact metadata.
 
 #### `extend_ttl(artifact_id, additional_seconds)`
-
 Extend artifact TTL.
 
 ### Presigned URLs
 
 #### `presign(artifact_id, expires=3600)`
-
 Generate presigned URL for download.
 
 #### `presign_short(artifact_id)` / `presign_medium(artifact_id)` / `presign_long(artifact_id)`
-
 Generate URLs with predefined durations (15min/1hr/24hr).
 
 #### `presign_upload(session_id=None, filename=None, mime_type="application/octet-stream", expires=3600)`
-
 Generate presigned URL for upload.
 
 #### `register_uploaded_artifact(artifact_id, *, mime, summary, ...)`
-
 Register metadata for presigned uploads.
 
 ### Batch Operations
 
 #### `store_batch(items, session_id=None, ttl=900)`
-
 Store multiple artifacts efficiently.
 
 ### Admin Operations
 
 #### `validate_configuration()`
-
 Validate storage and session provider connectivity.
 
 #### `get_stats()`
-
 Get storage statistics and configuration info.
 
 ### Grid Operations
 
 #### `get_canonical_prefix(session_id)`
-
 Get grid path prefix for session.
 
 #### `generate_artifact_key(session_id, artifact_id)`
-
 Generate grid artifact key.
 
 ## 🛠️ Advanced Features
 
 ### Error Handling
-
 ```python
 from chuk_artifacts import (
     ArtifactNotFoundError,
-    ArtifactExpiredError,
+    ArtifactExpiredError, 
     ProviderError,
     SessionError,
     ArtifactStoreError  # For session security violations
@@ -688,7 +639,6 @@ except ProviderError as e:
 ```
 
 ### Validation and Monitoring
-
 ```python
 # Validate configuration
 config_status = await store.validate_configuration()
@@ -703,7 +653,6 @@ print(f"Sandbox: {stats['sandbox_id']}")
 ```
 
 ### Context Manager Usage
-
 ```python
 async with ArtifactStore() as store:
     artifact_id = await store.store(
@@ -736,7 +685,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] **Directory-like operations** with prefix filtering
 - [x] **Comprehensive testing** with real-world scenarios
 - [ ] Azure Blob Storage provider
-- [ ] Google Cloud Storage provider
+- [ ] Google Cloud Storage provider  
 - [ ] Encryption at rest
 - [ ] Artifact versioning
 - [ ] Webhook notifications
@@ -747,4 +696,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Made with ❤️ for secure, scalable artifact storage**
 
-_Production-ready artifact storage with mandatory session security and grid architecture_
+*Production-ready artifact storage with mandatory session security and grid architecture*
