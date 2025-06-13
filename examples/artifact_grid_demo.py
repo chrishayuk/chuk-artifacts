@@ -13,10 +13,10 @@ backend.  Verifies:
 • exits 0 on success, 1 on any failure
 """
 from __future__ import annotations
-import asyncio, os, sys, hashlib, re, textwrap, json
-from contextlib import suppress
-from pathlib import Path
-from tempfile import TemporaryDirectory
+import asyncio
+import os
+import sys
+import re
 from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())  # load .env before we instantiate anything
@@ -77,7 +77,32 @@ async def run_demo() -> None:
     print("✅  Retrieve round-trip OK")
 
     # ------------------------------------------------------------------
-    # 5. presign URLs & GET
+    # 5. update artifact
+    # ------------------------------------------------------------------
+    updated_txt = b"updated text content"
+    await store.update_file(
+        artifact_id=aid_txt,
+        data=updated_txt,
+        mime="text/markdown",
+        summary="Updated text file",
+        meta={"updated": True},
+        filename="updated_demo.md"
+    )
+    
+    updated_back = await store.retrieve(aid_txt)
+    assert updated_back == updated_txt
+    
+    updated_meta = await store.metadata(aid_txt)
+    assert updated_meta["mime"] == "text/markdown"
+    assert updated_meta["summary"] == "Updated text file"
+    assert updated_meta["meta"]["updated"] is True
+    assert updated_meta["filename"] == "updated_demo.md"
+    assert updated_meta["bytes"] == len(updated_txt)
+    
+    print("🔄  Artifact update verified")
+
+    # ------------------------------------------------------------------
+    # 6. presign URLs & GET
     # ------------------------------------------------------------------
     url_short  = await store.presign_short(aid_txt)
     url_medium = await store.presign_medium(aid_png)
@@ -95,7 +120,7 @@ async def run_demo() -> None:
             print(f"🌐  {lab} GET → {r.status_code}, {len(r.content)} bytes")
 
     # ------------------------------------------------------------------
-    # 6. copy & move within same session
+    # 7. copy & move within same session
     # ------------------------------------------------------------------
     aid_copy = await store.copy_file(aid_txt, new_filename="demo_copy.txt")
     meta_copy = await store.metadata(aid_copy)
@@ -105,7 +130,7 @@ async def run_demo() -> None:
     print("📝  Copy & move safeguards OK")
 
     # ------------------------------------------------------------------
-    # 7. list / exists
+    # 8. list / exists
     # ------------------------------------------------------------------
     listing = await store.list_by_session(sess)
     ids = {x["artifact_id"] for x in listing}
@@ -115,14 +140,14 @@ async def run_demo() -> None:
     print(f"📃  List/exists OK ({len(listing)} records)")
 
     # ------------------------------------------------------------------
-    # 8. delete and confirm gone
+    # 9. delete and confirm gone
     # ------------------------------------------------------------------
     await store.delete(aid_copy)
     assert not await store.exists(aid_copy)
     print("🗑️   Delete confirmed")
 
     # ------------------------------------------------------------------
-    # 9. prove keys in bucket match helpers (real S3 only)
+    # 10. prove keys in bucket match helpers (real S3 only)
     # ------------------------------------------------------------------
     if backend == "s3":
         s3_factory = store._s3_factory
@@ -138,7 +163,7 @@ async def run_demo() -> None:
                 assert store.generate_artifact_key(sess, aid) in keys
 
     # ------------------------------------------------------------------
-    # 10. tidy
+    # 11. tidy
     # ------------------------------------------------------------------
     await store.close()
     print("\n🎉  ALL CHECKS PASSED")

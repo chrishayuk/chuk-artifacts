@@ -570,6 +570,9 @@ Move/rename file within same session only (cross-session blocked).
 #### `list_files(session_id, prefix="", limit=100)`
 List files with optional prefix filtering.
 
+#### `update_file(artifact_id, *, data=None, meta=None, filename=None, summary=None, mime=None)`
+Update artifact content, metadata, filename, summary, or MIME type. At least one field must be specified for update.
+
 ### Metadata Operations
 
 #### `update_metadata(artifact_id, *, summary=None, meta=None, merge=True, **kwargs)`
