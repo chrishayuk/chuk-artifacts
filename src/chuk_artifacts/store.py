@@ -634,3 +634,49 @@ class ArtifactStore:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
+
+    async def get_sandbox_info(self) -> Dict[str, Any]:
+        """
+        Get sandbox information and metadata.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing sandbox information including:
+            - sandbox_id: The current sandbox identifier
+            - bucket: The storage bucket name
+            - storage_provider: The storage provider type
+            - session_provider: The session provider type
+            - session_ttl_hours: Default session TTL
+            - grid_prefix_pattern: The grid path pattern for this sandbox
+            - created_at: Timestamp of when this info was retrieved
+        """
+        from datetime import datetime
+        
+        # Get session manager stats if available
+        session_stats = {}
+        try:
+            session_stats = self._session_manager.get_cache_stats()
+        except Exception:
+            pass  # Session manager might not have stats
+        
+        # Get storage stats if available
+        storage_stats = {}
+        try:
+            storage_stats = await self._admin.get_stats()
+        except Exception:
+            pass  # Storage might not have stats
+        
+        return {
+            "sandbox_id": self.sandbox_id,
+            "bucket": self.bucket,
+            "storage_provider": self._storage_provider_name,
+            "session_provider": self._session_provider_name,
+            "session_ttl_hours": self.session_ttl_hours,
+            "max_retries": self.max_retries,
+            "grid_prefix_pattern": self.get_session_prefix_pattern(),
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "session_stats": session_stats,
+            "storage_stats": storage_stats,
+            "closed": self._closed,
+        }

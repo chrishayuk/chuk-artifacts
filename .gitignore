@@ -13,4 +13,7 @@ wheels/
 .env
 
 # artifacts
-./artifacts/*
+artifacts/
+
+# cache
+.pytest_cache/

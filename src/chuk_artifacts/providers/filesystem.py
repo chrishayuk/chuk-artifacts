@@ -55,26 +55,6 @@ class _FilesystemClient:
         meta_json = json.dumps(meta_data, indent=2)
         await asyncio.to_thread(meta_path.write_text, meta_json, encoding='utf-8')
 
-    async def _write_bytes_to_file(self, 
-                                   meta_path: Path, 
-                                   Body: bytes, 
-                                   metadata: Dict[str, str]
-                                   ):
-        """
-        Asynchronously write byte data to a file using pathlib.
-
-        Args:
-            meta_path: The base directory where the file should be saved.
-            Body: The byte content to write.
-            metadata: Dictionary containing at least the 'filename' key.
-        """
-        if 'filename' not in metadata:
-            raise ValueError("metadata must include a 'filename' key")
-        target_dir = meta_path.parent
-        file_path = target_dir / metadata['filename']
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(file_path.write_bytes, Body)
-
     async def _read_metadata(self, meta_path: Path) -> Dict[str, Any]:
         """Read metadata file."""
         try:
@@ -108,8 +88,9 @@ class _FilesystemClient:
         
         async with self._lock:
             await self._ensure_parent_dir(object_path)
+            # Write the main object file
             await asyncio.to_thread(object_path.write_bytes, Body)
-            await self._write_bytes_to_file(meta_path=object_path,Body=Body,metadata=Metadata)
+            # Write the metadata file
             await self._write_metadata(meta_path, ContentType, Metadata, len(Body), etag)
 
         return {
@@ -131,7 +112,16 @@ class _FilesystemClient:
         meta_path = self._get_metadata_path(object_path)
 
         if not object_path.exists():
-            raise FileNotFoundError(f"NoSuchKey: {Key}")
+            # Mimic S3 NoSuchKey error
+            error = {
+                "Error": {
+                    "Code": "NoSuchKey",
+                    "Message": "The specified key does not exist.",
+                    "Key": Key,
+                    "BucketName": Bucket,
+                }
+            }
+            raise Exception(f"NoSuchKey: {error}")
 
         async with self._lock:
             body = await asyncio.to_thread(object_path.read_bytes)
@@ -163,7 +153,16 @@ class _FilesystemClient:
         meta_path = self._get_metadata_path(object_path)
 
         if not object_path.exists():
-            raise FileNotFoundError(f"NoSuchKey: {Key}")
+            # Mimic S3 NoSuchKey error
+            error = {
+                "Error": {
+                    "Code": "NoSuchKey",
+                    "Message": "The specified key does not exist.",
+                    "Key": Key,
+                    "BucketName": Bucket,
+                }
+            }
+            raise Exception(f"NoSuchKey: {error}")
 
         async with self._lock:
             metadata = await self._read_metadata(meta_path)
@@ -184,7 +183,7 @@ class _FilesystemClient:
             
         bucket_path = self._root / Bucket
         if not bucket_path.exists():
-            raise FileNotFoundError(f"NoSuchBucket: {Bucket}")
+            bucket_path.mkdir(parents=True, exist_ok=True)
             
         return {"ResponseMetadata": {"HTTPStatusCode": 200}}
 

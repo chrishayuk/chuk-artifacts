@@ -1,699 +1,712 @@
 # Chuk Artifacts
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/your-org/chuk-artifacts)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+> **Async artifact storage with session-based security and multi-backend support**
 
-**Asynchronous, multi-backend artifact storage with mandatory session-based security and grid architecture**
+A production-ready Python library for storing and managing files across multiple storage backends (S3, IBM COS, filesystem, memory) with Redis-based metadata caching and strict session isolation.
 
-Chuk Artifacts provides a production-ready, modular artifact storage system that works seamlessly across multiple storage backends (memory, filesystem, AWS S3, IBM Cloud Object Storage) with Redis or memory-based metadata caching and **strict session-based security**.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Async](https://img.shields.io/badge/async-await-green.svg)](https://docs.python.org/3/library/asyncio.html)
 
-## ✨ Key Features
+## Why Chuk Artifacts?
 
-- 🏗️ **Modular Architecture**: 5 specialized operation modules for clean separation of concerns
-- 🔒 **Mandatory Session Security**: Strict isolation with no anonymous artifacts or cross-session operations
-- 🌐 **Grid Architecture**: `grid/{sandbox_id}/{session_id}/{artifact_id}` paths for federation-ready organization
-- 🔄 **Multi-Backend Support**: Memory, filesystem, S3, IBM COS with seamless switching
-- ⚡ **High Performance**: Built with async/await for high throughput (3,000+ ops/sec)
-- 🔗 **Presigned URLs**: Secure, time-limited access without credential exposure
-- 📊 **Batch Operations**: Efficient multi-file uploads and processing
-- 🗃️ **Metadata Caching**: Fast lookups with Redis or memory-based sessions
-- 📁 **Directory-Like Operations**: Organize files with path-based prefixes
-- 🔧 **Zero Configuration**: Works out of the box with sensible defaults
-- 🌍 **Production Ready**: Battle-tested with comprehensive error handling
+- 🔒 **Session-based security** - Every file belongs to a session, preventing data leaks
+- 🌐 **Multiple backends** - Switch between S3, filesystem, memory without code changes  
+- ⚡ **High performance** - 3,000+ operations/second with async/await
+- 🎯 **Zero config** - Works out of the box, configure only what you need
+- 🔗 **Presigned URLs** - Secure file access without exposing credentials
+- 📦 **Grid architecture** - Organized paths for scalability and federation
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
 ```bash
 pip install chuk-artifacts
-# or with uv
-uv add chuk-artifacts
 ```
 
-### Basic Usage
+### 30-Second Example
 
 ```python
 from chuk_artifacts import ArtifactStore
 
-# Zero-config setup (uses memory provider)
+# Works immediately - no configuration needed
 async with ArtifactStore() as store:
-    # Store an artifact (session auto-allocated)
-    artifact_id = await store.store(
+    # Store a file
+    file_id = await store.store(
         data=b"Hello, world!",
-        mime="text/plain",
-        summary="A simple greeting",
+        mime="text/plain", 
+        summary="My first file",
         filename="hello.txt"
-        # session_id auto-allocated if not provided
     )
     
-    # Retrieve it
-    data = await store.retrieve(artifact_id)
-    print(data.decode())  # "Hello, world!"
+    # Get it back
+    content = await store.retrieve(file_id)
+    print(content.decode())  # "Hello, world!"
     
-    # Generate a presigned URL
-    download_url = await store.presign_medium(artifact_id)  # 1 hour
+    # Share with a secure URL
+    url = await store.presign(file_id)
+    print(f"Download: {url}")
 ```
 
-### Session-Based File Management
+That's it! No AWS credentials, no Redis setup, no configuration files. Perfect for development and testing.
+
+## Core Concepts
+
+### Sessions = Security Boundaries
+
+Every file belongs to a **session**. Sessions prevent users from accessing each other's files:
 
 ```python
-async with ArtifactStore() as store:
-    # Create files in user sessions
-    doc_id = await store.write_file(
-        content="# User's Document\n\nPrivate content here.",
-        filename="docs/private.md",
-        mime="text/markdown",
-        session_id="user_alice"
-    )
-    
-    # List files in a session
-    files = await store.list_by_session("user_alice")
-    print(f"Alice has {len(files)} files")
-    
-    # List directory-like contents
-    docs = await store.get_directory_contents("user_alice", "docs/")
-    print(f"Alice's docs: {len(docs)} files")
-    
-    # Copy within same session (allowed)
-    backup_id = await store.copy_file(
-        doc_id,
-        new_filename="docs/private_backup.md"
-    )
-    
-    # Cross-session operations are BLOCKED for security
-    try:
-        await store.copy_file(
-            doc_id, 
-            target_session_id="user_bob"  # This will fail
-        )
-    except ArtifactStoreError:
-        print("✅ Cross-session operations blocked!")
-```
-
-### Configuration
-
-```python
-# Production setup with S3 and Redis
-store = ArtifactStore(
-    storage_provider="s3",
-    session_provider="redis",
-    bucket="my-artifacts"
+# Files are isolated by session
+alice_file = await store.store(
+    data=b"Alice's private data",
+    mime="text/plain",
+    summary="Private file",
+    session_id="user_alice"  # Alice's session
 )
 
-# Or use environment variables
-# ARTIFACT_PROVIDER=s3
-# SESSION_PROVIDER=redis
-# AWS_ACCESS_KEY_ID=your_key
-# AWS_SECRET_ACCESS_KEY=your_secret
-# ARTIFACT_BUCKET=my-artifacts
+bob_file = await store.store(
+    data=b"Bob's private data", 
+    mime="text/plain",
+    summary="Private file",
+    session_id="user_bob"  # Bob's session
+)
 
-store = ArtifactStore()  # Auto-loads configuration
-```
+# Alice can't access Bob's files
+alice_files = await store.list_by_session("user_alice")  # Only Alice's files
+bob_files = await store.list_by_session("user_bob")      # Only Bob's files
 
-## 🏗️ Modular Architecture
-
-Chuk Artifacts uses a clean modular architecture with specialized operation modules:
-
-```
-ArtifactStore (Main Coordinator)
-├── CoreStorageOperations     # store() and retrieve()
-├── MetadataOperations        # metadata, exists, delete, update, list operations
-├── PresignedURLOperations    # URL generation and upload workflows  
-├── BatchOperations          # store_batch() for multiple files
-└── AdminOperations          # validate_configuration, get_stats
+# Cross-session operations are blocked
+await store.copy_file(alice_file, target_session_id="user_bob")  # ❌ Denied
 ```
 
 ### Grid Architecture
 
-All artifacts are organized using a consistent grid structure:
-
+Files are organized in a predictable hierarchy:
 ```
-grid/{sandbox_id}/{session_id}/{artifact_id}
+grid/
+├── sandbox_id/
+│   ├── session_alice/
+│   │   ├── file_1
+│   │   └── file_2
+│   └── session_bob/
+│       ├── file_3
+│       └── file_4
 ```
 
-**Benefits:**
-- **Federation Ready**: Cross-sandbox discovery and routing
-- **Session Isolation**: Clear boundaries for security
-- **Predictable Paths**: Easy to understand and manage
-- **Scalable**: Handles multi-tenant applications
+This makes the system **multi-tenant safe** and **federation-ready**.
 
-This design provides:
-- **Better testability**: Each module can be tested independently
-- **Enhanced maintainability**: Clear separation of concerns
-- **Easy extensibility**: Add new operation types without touching core
-- **Improved debugging**: Isolated functionality for easier troubleshooting
+## File Operations
 
-## 🔒 Session-Based Security
+### Basic Operations
 
-### Mandatory Sessions
 ```python
-# Every artifact belongs to a session - no anonymous artifacts
-artifact_id = await store.store(
-    data=b"content",
-    mime="text/plain",
-    summary="description"
-    # session_id auto-allocated if not provided
+# Store a file
+file_id = await store.store(
+    data=file_bytes,
+    mime="image/jpeg",
+    summary="Profile photo",
+    filename="avatar.jpg",
+    session_id="user_123"
 )
 
-# Get the session it was allocated to
-metadata = await store.metadata(artifact_id)
-session_id = metadata["session_id"]
+# Read file content directly  
+content = await store.read_file(file_id, as_text=True)
+
+# Write text files easily
+doc_id = await store.write_file(
+    content="# My Document\n\nHello world!",
+    filename="docs/readme.md",
+    mime="text/markdown",
+    session_id="user_123"
+)
+
+# Check if file exists
+if await store.exists(file_id):
+    print("File found!")
+
+# Delete file
+await store.delete(file_id)
 ```
 
-### Strict Session Isolation
+### Directory-Like Operations
+
 ```python
-# Users can only access their own files
-alice_files = await store.list_by_session("user_alice")
-bob_files = await store.list_by_session("user_bob")
+# List files in a session
+files = await store.list_by_session("user_123")
 
-# Cross-session operations are blocked
-await store.copy_file(alice_file_id, target_session_id="user_bob")  # ❌ Blocked
-await store.move_file(alice_file_id, new_session_id="user_bob")     # ❌ Blocked
+# List files in a "directory"
+docs = await store.get_directory_contents("user_123", "docs/")
+images = await store.get_directory_contents("user_123", "images/")
+
+# Copy files (within same session only)
+backup_id = await store.copy_file(
+    file_id,
+    new_filename="docs/readme_backup.md"
+)
 ```
 
-### Multi-Tenant Safe
+### Metadata and Updates
+
 ```python
-# Perfect for SaaS applications
-company_a_files = await store.list_by_session("company_a")
-company_b_files = await store.list_by_session("company_b")
+# Get file metadata
+meta = await store.metadata(file_id)
+print(f"Size: {meta['bytes']} bytes")
+print(f"Created: {meta['stored_at']}")
 
-# Companies cannot access each other's data
-# Compliance-ready: GDPR, SOX, HIPAA
+# Update metadata
+await store.update_metadata(
+    file_id,
+    summary="Updated description",
+    meta={"version": 2, "author": "Alice"}
+)
+
+# Update file content
+await store.update_file(
+    file_id,
+    data=b"New content",
+    summary="Updated file"
+)
 ```
 
-## 📦 Storage Providers
+## Storage Providers
 
-### Memory Provider
+### Memory Provider (Default)
+
+Perfect for development and testing:
+
 ```python
-store = ArtifactStore(storage_provider="memory")
+# Automatic - no configuration needed
+store = ArtifactStore()
 ```
-- Perfect for development and testing
-- Zero configuration required
-- Non-persistent (data lost on restart)
-- **Note**: Provider isolation limitations for testing
+
+- ✅ Zero setup
+- ✅ Fast
+- ❌ Non-persistent (lost on restart)
 
 ### Filesystem Provider
+
+Local disk storage:
+
 ```python
 store = ArtifactStore(storage_provider="filesystem")
-# Set root directory
-os.environ["ARTIFACT_FS_ROOT"] = "./my-artifacts"
+
+# Or via environment
+export ARTIFACT_PROVIDER=filesystem
+export ARTIFACT_FS_ROOT=./my-files
 ```
-- Local disk storage
-- Persistent across restarts
-- `file://` URLs for local access
-- **Full session listing support**
-- Great for development and staging
+
+- ✅ Persistent
+- ✅ Good for development
+- ✅ Easy debugging
+- ❌ Not suitable for production clustering
 
 ### AWS S3 Provider
+
+Production-ready cloud storage:
+
 ```python
 store = ArtifactStore(storage_provider="s3")
+
 # Configure via environment
-os.environ.update({
-    "AWS_ACCESS_KEY_ID": "your_key",
-    "AWS_SECRET_ACCESS_KEY": "your_secret",
-    "AWS_REGION": "us-east-1",
-    "ARTIFACT_BUCKET": "my-bucket"
-})
+export ARTIFACT_PROVIDER=s3
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret  
+export AWS_REGION=us-east-1
+export ARTIFACT_BUCKET=my-bucket
 ```
-- Industry-standard cloud storage
-- Native presigned URL support
-- Highly scalable and durable
-- **Full session listing support**
-- Perfect for production workloads
+
+- ✅ Highly scalable
+- ✅ Durable (99.999999999%)  
+- ✅ Native presigned URLs
+- ✅ Production ready
 
 ### IBM Cloud Object Storage
-```python
-# HMAC authentication
-store = ArtifactStore(storage_provider="ibm_cos")
-os.environ.update({
-    "AWS_ACCESS_KEY_ID": "your_hmac_key",
-    "AWS_SECRET_ACCESS_KEY": "your_hmac_secret",
-    "IBM_COS_ENDPOINT": "https://s3.us-south.cloud-object-storage.appdomain.cloud"
-})
 
-# IAM authentication
+Enterprise object storage:
+
+```python
+# HMAC credentials
+store = ArtifactStore(storage_provider="ibm_cos")
+
+export ARTIFACT_PROVIDER=ibm_cos
+export AWS_ACCESS_KEY_ID=your_hmac_key
+export AWS_SECRET_ACCESS_KEY=your_hmac_secret
+export IBM_COS_ENDPOINT=https://s3.us-south.cloud-object-storage.appdomain.cloud
+
+# Or IAM credentials  
 store = ArtifactStore(storage_provider="ibm_cos_iam")
-os.environ.update({
-    "IBM_COS_APIKEY": "your_api_key",
-    "IBM_COS_INSTANCE_CRN": "crn:v1:bluemix:public:cloud-object-storage:..."
-})
+
+export ARTIFACT_PROVIDER=ibm_cos_iam
+export IBM_COS_APIKEY=your_api_key
+export IBM_COS_INSTANCE_CRN=crn:v1:bluemix:public:cloud-object-storage:...
 ```
 
-## 🗃️ Session Providers
+## Session Providers
 
-### Memory Sessions
+### Memory Sessions (Default)
+
+Fast, in-memory metadata storage:
+
 ```python
 store = ArtifactStore(session_provider="memory")
 ```
-- In-memory metadata storage
-- Fast but non-persistent
-- Perfect for testing
+
+- ✅ Fast
+- ✅ No setup
+- ❌ Non-persistent
+- ❌ Single instance only
 
 ### Redis Sessions
+
+Persistent, shared metadata storage:
+
 ```python
 store = ArtifactStore(session_provider="redis")
-os.environ["SESSION_REDIS_URL"] = "redis://localhost:6379/0"
+
+# Configure via environment
+export SESSION_PROVIDER=redis
+export SESSION_REDIS_URL=redis://localhost:6379/0
 ```
-- Persistent metadata storage
-- Shared across multiple instances
-- Production-ready caching
 
-## 🎯 Common Use Cases
+- ✅ Persistent
+- ✅ Shared across instances
+- ✅ Production ready
+- ✅ High performance
 
-### MCP Server Integration
+## Environment Variables
+
+| Variable | Description | Default | Examples |
+|----------|-------------|---------|----------|
+| **Storage Configuration** |
+| `ARTIFACT_PROVIDER` | Storage backend | `memory` | `s3`, `filesystem`, `ibm_cos` |
+| `ARTIFACT_BUCKET` | Bucket/container name | `artifacts` | `my-files`, `prod-storage` |
+| `ARTIFACT_FS_ROOT` | Filesystem root directory | `./artifacts` | `/data/files`, `~/storage` |
+| `ARTIFACT_SANDBOX_ID` | Sandbox identifier | Auto-generated | `myapp`, `prod-env` |
+| **Session Configuration** |
+| `SESSION_PROVIDER` | Session metadata storage | `memory` | `redis` |
+| `SESSION_REDIS_URL` | Redis connection URL | - | `redis://localhost:6379/0` |
+| **AWS/S3 Configuration** |
+| `AWS_ACCESS_KEY_ID` | AWS access key | - | `AKIA...` |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key | - | `abc123...` |
+| `AWS_REGION` | AWS region | `us-east-1` | `us-west-2`, `eu-west-1` |
+| `S3_ENDPOINT_URL` | Custom S3 endpoint | - | `https://minio.example.com` |
+| **IBM COS Configuration** |
+| `IBM_COS_ENDPOINT` | IBM COS endpoint | - | `https://s3.us-south.cloud-object-storage.appdomain.cloud` |
+| `IBM_COS_APIKEY` | IBM Cloud API key (IAM) | - | `abc123...` |
+| `IBM_COS_INSTANCE_CRN` | COS instance CRN (IAM) | - | `crn:v1:bluemix:public:...` |
+
+## Configuration Examples
+
+### Development Setup
 
 ```python
+# Zero configuration - uses memory providers
 from chuk_artifacts import ArtifactStore
 
-# Initialize for MCP server
-store = ArtifactStore(
-    storage_provider="filesystem",  # or "s3" for production
-    session_provider="redis"
+store = ArtifactStore()
+```
+
+### Local Development with Persistence
+
+```python
+import os
+from chuk_artifacts import ArtifactStore
+
+# Use filesystem for persistence
+os.environ["ARTIFACT_PROVIDER"] = "filesystem"
+os.environ["ARTIFACT_FS_ROOT"] = "./dev-storage"
+
+store = ArtifactStore()
+```
+
+### Production with S3 + Redis
+
+```python
+import os
+from chuk_artifacts import ArtifactStore
+
+# Configure S3 storage
+os.environ.update({
+    "ARTIFACT_PROVIDER": "s3",
+    "AWS_ACCESS_KEY_ID": "AKIA...",
+    "AWS_SECRET_ACCESS_KEY": "...", 
+    "AWS_REGION": "us-east-1",
+    "ARTIFACT_BUCKET": "prod-artifacts"
+})
+
+# Configure Redis sessions  
+os.environ.update({
+    "SESSION_PROVIDER": "redis",
+    "SESSION_REDIS_URL": "redis://prod-redis:6379/0"
+})
+
+store = ArtifactStore()
+```
+
+### Docker Compose Example
+
+```yaml
+version: '3.8'
+services:
+  app:
+    image: myapp
+    environment:
+      # Storage
+      ARTIFACT_PROVIDER: s3
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: us-east-1
+      ARTIFACT_BUCKET: myapp-artifacts
+      
+      # Sessions  
+      SESSION_PROVIDER: redis
+      SESSION_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+      
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
+```
+
+## Presigned URLs
+
+Generate secure, time-limited URLs for file access without exposing your storage credentials:
+
+```python
+# Generate download URLs
+url = await store.presign(file_id)                    # 1 hour (default)
+short_url = await store.presign_short(file_id)        # 15 minutes  
+medium_url = await store.presign_medium(file_id)      # 1 hour
+long_url = await store.presign_long(file_id)          # 24 hours
+
+# Generate upload URLs
+upload_url, artifact_id = await store.presign_upload(
+    session_id="user_123",
+    filename="upload.jpg",
+    mime_type="image/jpeg"
 )
 
-# MCP tool: Upload file
-async def upload_file(data_base64: str, filename: str, mime: str, session_id: str):
-    data = base64.b64decode(data_base64)
-    artifact_id = await store.store(
-        data=data,
-        mime=mime,
-        summary=f"Uploaded: {filename}",
-        filename=filename,
-        session_id=session_id  # Session isolation
-    )
-    return {"artifact_id": artifact_id}
-
-# MCP tool: List session files
-async def list_session_files(session_id: str, prefix: str = ""):
-    files = await store.get_directory_contents(session_id, prefix)
-    return {"files": files}
-
-# MCP tool: Copy file (within session only)
-async def copy_file(artifact_id: str, new_filename: str):
-    new_id = await store.copy_file(artifact_id, new_filename=new_filename)
-    return {"new_artifact_id": new_id}
+# Client uploads to upload_url, then register the file
+await store.register_uploaded_artifact(
+    artifact_id,
+    mime="image/jpeg",
+    summary="User uploaded image",
+    filename="upload.jpg"
+)
 ```
 
-### Web Framework Integration
+## Common Use Cases
+
+### Web Application File Uploads
 
 ```python
 from chuk_artifacts import ArtifactStore
 
-# Initialize once at startup
 store = ArtifactStore(
     storage_provider="s3",
     session_provider="redis"
 )
 
-async def upload_file(file_content: bytes, filename: str, content_type: str, user_id: str):
-    """Handle file upload in FastAPI/Flask with user isolation"""
-    artifact_id = await store.store(
-        data=file_content,
-        mime=content_type,
+async def handle_upload(file_data: bytes, filename: str, user_id: str):
+    """Handle file upload with user isolation"""
+    file_id = await store.store(
+        data=file_data,
+        mime="application/octet-stream",
         summary=f"Uploaded: {filename}",
         filename=filename,
         session_id=f"user_{user_id}"  # User-specific session
     )
     
-    # Return download URL
-    download_url = await store.presign_medium(artifact_id)
-    return {
-        "artifact_id": artifact_id,
-        "download_url": download_url
-    }
+    # Return download URL  
+    download_url = await store.presign_medium(file_id)
+    return {"file_id": file_id, "download_url": download_url}
 
-async def list_user_files(user_id: str, directory: str = ""):
-    """List files for a specific user"""
-    return await store.get_directory_contents(f"user_{user_id}", directory)
+async def list_user_files(user_id: str):
+    """List all files for a user"""
+    return await store.list_by_session(f"user_{user_id}")
 ```
 
-### Advanced File Operations
+### MCP Server Integration
 
 ```python
-# Read file content directly
-content = await store.read_file(artifact_id, as_text=True)
-print(f"File content: {content}")
+async def mcp_upload_file(data_b64: str, filename: str, session_id: str):
+    """MCP tool for file uploads"""
+    import base64
+    
+    data = base64.b64decode(data_b64)
+    file_id = await store.store(
+        data=data,
+        mime="application/octet-stream",
+        summary=f"Uploaded via MCP: {filename}",
+        filename=filename,
+        session_id=session_id
+    )
+    
+    return {"file_id": file_id, "message": f"Uploaded {filename}"}
 
-# Write file with content
-new_id = await store.write_file(
-    content="# New Document\n\nThis is a new file.",
-    filename="documents/new_doc.md",
-    mime="text/markdown",
-    session_id="user_123"
-)
-
-# Move/rename file within session
-await store.move_file(
-    artifact_id,
-    new_filename="documents/renamed_doc.md"
-)
-
-# Update metadata
-await store.update_metadata(
-    artifact_id,
-    summary="Updated summary",
-    meta={"version": 2, "updated_by": "user_123"}
-)
-
-# Extend TTL
-await store.extend_ttl(artifact_id, additional_seconds=3600)
+async def mcp_list_files(session_id: str, directory: str = ""):
+    """MCP tool for listing files"""
+    files = await store.get_directory_contents(session_id, directory)
+    return {"files": [{"name": f["filename"], "size": f["bytes"]} for f in files]}
 ```
 
-### Batch Processing
+### Document Management
 
 ```python
-# Prepare multiple files
-items = [
+async def create_document(content: str, path: str, user_id: str):
+    """Create a text document"""
+    doc_id = await store.write_file(
+        content=content,
+        filename=path,
+        mime="text/plain",
+        summary=f"Document: {path}",
+        session_id=f"user_{user_id}"
+    )
+    return doc_id
+
+async def get_document(doc_id: str):
+    """Read document content"""
+    return await store.read_file(doc_id, as_text=True)
+
+async def list_documents(user_id: str, folder: str = ""):
+    """List documents in a folder"""
+    return await store.get_directory_contents(f"user_{user_id}", folder)
+```
+
+## Batch Operations
+
+Process multiple files efficiently:
+
+```python
+# Prepare batch data
+files = [
     {
-        "data": file1_content,
-        "mime": "image/png",
-        "summary": "Product image 1",
-        "filename": "images/product1.png"
+        "data": file1_bytes,
+        "mime": "image/jpeg",
+        "summary": "Product image 1", 
+        "filename": "products/img1.jpg"
     },
     {
-        "data": file2_content,
-        "mime": "image/png", 
+        "data": file2_bytes,
+        "mime": "image/jpeg",
         "summary": "Product image 2",
-        "filename": "images/product2.png"
+        "filename": "products/img2.jpg"  
     }
 ]
 
-# Store all at once with session isolation
-artifact_ids = await store.store_batch(items, session_id="product-catalog")
+# Store all files at once
+file_ids = await store.store_batch(files, session_id="product_catalog")
 ```
 
-## 🧪 Testing
-
-### Run All Tests
-```bash
-# MCP server scenarios (recommended)
-uv run examples/mcp_test_demo.py
-
-# Session security testing
-uv run examples/session_operations_demo.py
-
-# Grid architecture demo
-uv run examples/grid_demo.py
-
-# Complete verification
-uv run examples/complete_verification.py
-```
-
-### Test Results
-Recent test results show excellent performance:
-```
-📤 Test 1: Rapid file creation...
-✅ Created 20 files in 0.006s (3,083 files/sec)
-
-📋 Test 2: Session listing performance...
-✅ Listed 20 files in 0.002s
-
-📁 Test 3: Directory operations...
-✅ Listed uploads/ directory (20 files) in 0.002s
-
-📖 Test 4: Batch read operations...
-✅ Read 10 files in 0.002s (4,693 reads/sec)
-
-📋 Test 5: Copy operations...
-✅ Copied 5 files in 0.003s (1,811 copies/sec)
-```
-
-### Development Setup
-```python
-from chuk_artifacts.config import development_setup
-
-store = development_setup()  # Uses memory providers
-```
-
-### Testing Setup
-```python
-from chuk_artifacts.config import testing_setup
-
-store = testing_setup("./test-artifacts")  # Uses filesystem
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-```bash
-# Storage configuration
-ARTIFACT_PROVIDER=s3              # memory, filesystem, s3, ibm_cos, ibm_cos_iam
-ARTIFACT_BUCKET=my-artifacts       # Bucket/container name
-ARTIFACT_FS_ROOT=./artifacts       # Filesystem root (filesystem provider)
-ARTIFACT_SANDBOX_ID=my-app         # Sandbox identifier for multi-tenancy
-
-# Session configuration  
-SESSION_PROVIDER=redis             # memory, redis
-SESSION_REDIS_URL=redis://localhost:6379/0
-
-# AWS/S3 configuration
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-AWS_REGION=us-east-1
-S3_ENDPOINT_URL=https://custom-s3.com  # Optional: custom S3 endpoint
-
-# IBM COS configuration
-IBM_COS_ENDPOINT=https://s3.us-south.cloud-object-storage.appdomain.cloud
-IBM_COS_APIKEY=your_api_key        # For IAM auth
-IBM_COS_INSTANCE_CRN=crn:v1:...    # For IAM auth
-```
-
-### Programmatic Configuration
+## Error Handling
 
 ```python
-from chuk_artifacts.config import configure_s3, configure_redis_session
-
-# Configure S3 storage
-configure_s3(
-    access_key="AKIA...",
-    secret_key="...",
-    bucket="prod-artifacts",
-    region="us-west-2"
+from chuk_artifacts import (
+    ArtifactStoreError,
+    ArtifactNotFoundError,
+    ProviderError,
+    SessionError
 )
 
-# Configure Redis sessions
-configure_redis_session("redis://prod-redis:6379/1")
-
-# Create store with this configuration
-store = ArtifactStore()
+try:
+    data = await store.retrieve(file_id)
+except ArtifactNotFoundError:
+    print("File not found or expired")
+except ProviderError as e:
+    print(f"Storage error: {e}")
+except SessionError as e:  
+    print(f"Session error: {e}")
+except ArtifactStoreError as e:
+    # This catches security violations like cross-session operations
+    print(f"Operation denied: {e}")
 ```
 
-## 🚀 Performance
+## Performance
 
-- **High Throughput**: 3,000+ file operations per second
-- **Async/Await**: Non-blocking I/O for high concurrency
-- **Connection Pooling**: Efficient resource usage with aioboto3
-- **Metadata Caching**: Sub-millisecond lookups with Redis
-- **Batch Operations**: Reduced overhead for multiple files
-- **Grid Architecture**: Optimized session-based queries
+Chuk Artifacts is built for high performance:
 
-### Performance Benchmarks
+- **3,000+ operations/second** in benchmarks
+- **Async/await** throughout for non-blocking I/O
+- **Connection pooling** with aioboto3
+- **Redis caching** for sub-millisecond metadata lookups
+- **Batch operations** to reduce overhead
+
+### Benchmark Results
 ```
 ✅ File Creation: 3,083 files/sec
 ✅ File Reading: 4,693 reads/sec  
 ✅ File Copying: 1,811 copies/sec
-✅ Session Listing: ~0.002s for 20+ files
-✅ Directory Listing: ~0.002s for filtered results
+✅ Session Listing: ~2ms for 20+ files
 ```
 
-## 🔒 Security
+## Testing
 
-- **Mandatory Sessions**: No anonymous artifacts allowed
-- **Session Isolation**: Strict boundaries prevent cross-session access
-- **No Cross-Session Operations**: Copy, move, overwrite blocked across sessions
-- **Grid Architecture**: Clear audit trail in paths
-- **Presigned URLs**: Time-limited access without credential sharing
-- **Secure Defaults**: Conservative TTL and expiration settings
-- **Credential Isolation**: Environment-based configuration
-- **Error Handling**: No sensitive data in logs or exceptions
+Run the included examples to verify everything works:
 
-### Security Validation
-```python
-# All these operations are blocked for security
-await store.copy_file(user_a_file, target_session_id="user_b")  # ❌ Blocked
-await store.move_file(user_a_file, new_session_id="user_b")     # ❌ Blocked  
+```bash
+# Basic functionality test
+python -c "
+import asyncio
+from chuk_artifacts import ArtifactStore
 
-# Security test results:
-# ✅ Cross-session copy correctly blocked
-# ✅ Cross-session move correctly blocked  
-# ✅ Cross-session overwrite correctly blocked
-# 🛡️ ALL SECURITY TESTS PASSED!
+async def test():
+    async with ArtifactStore() as store:
+        file_id = await store.store(
+            data=b'Hello, world!',
+            mime='text/plain',
+            summary='Test file'
+        )
+        content = await store.retrieve(file_id)
+        print(f'Success! Retrieved: {content.decode()}')
+
+asyncio.run(test())
+"
 ```
 
-## 📝 API Reference
+For development, use the filesystem provider for easy debugging:
 
-### Core Methods
-
-#### `store(data, *, mime, summary, meta=None, filename=None, session_id=None, user_id=None, ttl=900)`
-Store artifact data with metadata. Session auto-allocated if not provided.
-
-#### `retrieve(artifact_id)`
-Retrieve artifact data by ID.
-
-#### `metadata(artifact_id)`
-Get artifact metadata.
-
-#### `exists(artifact_id)` / `delete(artifact_id)`
-Check existence or delete artifacts.
-
-### Session Operations
-
-#### `create_session(user_id=None, ttl_hours=None)`
-Create a new session explicitly.
-
-#### `validate_session(session_id)` / `get_session_info(session_id)`
-Session validation and information retrieval.
-
-#### `list_by_session(session_id, limit=100)`
-List all artifacts in a session.
-
-#### `get_directory_contents(session_id, directory_prefix="", limit=100)`
-Get files in a directory-like structure.
-
-### File Operations
-
-#### `write_file(content, *, filename, mime="text/plain", session_id=None, ...)`
-Write content to new file.
-
-#### `read_file(artifact_id, *, encoding="utf-8", as_text=True)`
-Read file content directly as text or binary.
-
-#### `copy_file(artifact_id, *, new_filename=None, new_meta=None, summary=None)`
-Copy file within same session only (cross-session blocked).
-
-#### `move_file(artifact_id, *, new_filename=None, new_meta=None)`
-Move/rename file within same session only (cross-session blocked).
-
-#### `list_files(session_id, prefix="", limit=100)`
-List files with optional prefix filtering.
-
-#### `update_file(artifact_id, *, data=None, meta=None, filename=None, summary=None, mime=None)`
-Update artifact content, metadata, filename, summary, or MIME type. At least one field must be specified for update.
-
-### Metadata Operations
-
-#### `update_metadata(artifact_id, *, summary=None, meta=None, merge=True, **kwargs)`
-Update artifact metadata.
-
-#### `extend_ttl(artifact_id, additional_seconds)`
-Extend artifact TTL.
-
-### Presigned URLs
-
-#### `presign(artifact_id, expires=3600)`
-Generate presigned URL for download.
-
-#### `presign_short(artifact_id)` / `presign_medium(artifact_id)` / `presign_long(artifact_id)`
-Generate URLs with predefined durations (15min/1hr/24hr).
-
-#### `presign_upload(session_id=None, filename=None, mime_type="application/octet-stream", expires=3600)`
-Generate presigned URL for upload.
-
-#### `register_uploaded_artifact(artifact_id, *, mime, summary, ...)`
-Register metadata for presigned uploads.
-
-### Batch Operations
-
-#### `store_batch(items, session_id=None, ttl=900)`
-Store multiple artifacts efficiently.
-
-### Admin Operations
-
-#### `validate_configuration()`
-Validate storage and session provider connectivity.
-
-#### `get_stats()`
-Get storage statistics and configuration info.
-
-### Grid Operations
-
-#### `get_canonical_prefix(session_id)`
-Get grid path prefix for session.
-
-#### `generate_artifact_key(session_id, artifact_id)`
-Generate grid artifact key.
-
-## 🛠️ Advanced Features
-
-### Error Handling
 ```python
-from chuk_artifacts import (
-    ArtifactNotFoundError,
-    ArtifactExpiredError, 
-    ProviderError,
-    SessionError,
-    ArtifactStoreError  # For session security violations
-)
+import tempfile
+from chuk_artifacts import ArtifactStore
 
+async def test_with_filesystem():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = ArtifactStore(
+            storage_provider="filesystem",
+            fs_root=tmpdir
+        )
+        
+        file_id = await store.store(
+            data=b"Test content",
+            mime="text/plain", 
+            summary="Test file"
+        )
+        
+        # Files are visible in tmpdir for debugging
+        print(f"Files stored in: {tmpdir}")
+```
+
+## Security
+
+### Session Isolation
+
+Sessions provide strict security boundaries:
+
+```python
+# Each user gets their own session
+alice_session = "user_alice"  
+bob_session = "user_bob"
+
+# Users can only access their own files
+alice_files = await store.list_by_session(alice_session)
+bob_files = await store.list_by_session(bob_session)
+
+# Cross-session operations are blocked
 try:
-    await store.copy_file(artifact_id, target_session_id="other_session")
-except ArtifactStoreError as e:
-    print(f"Security violation: {e}")
-except ArtifactNotFoundError:
-    print("Artifact not found or expired")
-except ProviderError as e:
-    print(f"Storage provider error: {e}")
+    await store.copy_file(alice_file_id, target_session_id=bob_session)
+except ArtifactStoreError:
+    print("✅ Cross-session access denied!")
 ```
 
-### Validation and Monitoring
+### Secure Defaults
+
+- Files expire automatically (configurable TTL)
+- Presigned URLs have time limits  
+- No sensitive data in error messages
+- Environment-based credential configuration
+- Session-based access control
+
+## Migration Guide
+
+### From Local Storage
+
 ```python
-# Validate configuration
-config_status = await store.validate_configuration()
-print(f"Storage: {config_status['storage']['status']}")
-print(f"Session: {config_status['session']['status']}")
+# Before: Simple file operations
+with open("file.txt", "rb") as f:
+    data = f.read()
 
-# Get statistics
-stats = await store.get_stats()
-print(f"Provider: {stats['storage_provider']}")
-print(f"Bucket: {stats['bucket']}")
-print(f"Sandbox: {stats['sandbox_id']}")
+# After: Session-based storage
+file_id = await store.store(
+    data=data,
+    mime="text/plain",
+    summary="Migrated file",
+    filename="file.txt",
+    session_id="migration_session"
+)
 ```
 
-### Context Manager Usage
+### From Basic S3
+
 ```python
-async with ArtifactStore() as store:
-    artifact_id = await store.store(
-        data=b"Temporary data",
-        mime="text/plain",
-        summary="Auto-cleanup example"
-    )
-    # Store automatically closed on exit
+# Before: Direct S3 operations
+s3.put_object(Bucket="bucket", Key="key", Body=data)
+
+# After: Managed artifact storage
+file_id = await store.store(
+    data=data,
+    mime="application/octet-stream", 
+    summary="File description",
+    filename="myfile.dat"
+)
 ```
 
-## 🤝 Contributing
+## FAQ
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes
-4. Run tests: `uv run examples/mcp_test_demo.py`
-5. Test session operations: `uv run examples/session_operations_demo.py`
-6. Submit a pull request
+### Q: Do I need Redis for development?
 
-## 📄 License
+**A:** No! The default memory providers work great for development and testing. Only use Redis for production or when you need persistence.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Q: Can I switch storage providers later?
 
-## 🎯 Roadmap
+**A:** Yes! Change the `ARTIFACT_PROVIDER` environment variable. The API stays the same.
 
-- [x] **Session-based security** with strict isolation
-- [x] **Grid architecture** with federation-ready paths
-- [x] **Modular design** with specialized operation modules
-- [x] **High-performance operations** (3,000+ ops/sec)
-- [x] **Directory-like operations** with prefix filtering
-- [x] **Comprehensive testing** with real-world scenarios
-- [ ] Azure Blob Storage provider
-- [ ] Google Cloud Storage provider  
-- [ ] Encryption at rest
-- [ ] Artifact versioning
-- [ ] Webhook notifications
-- [ ] Prometheus metrics export
-- [ ] Federation implementation
+### Q: How do sessions work with authentication?
+
+**A:** Sessions are just strings. Map them to your users however you want:
+
+```python
+# Example mappings
+session_id = f"user_{user.id}"           # User-based
+session_id = f"org_{org.id}"             # Organization-based  
+session_id = f"project_{project.uuid}"   # Project-based
+```
+
+### Q: What happens when files expire?
+
+**A:** Expired files are automatically cleaned up during session cleanup operations. You can also run manual cleanup:
+
+```python
+expired_count = await store.cleanup_expired_sessions()
+```
+
+### Q: Can I use this with Django/FastAPI/Flask?
+
+**A:** Absolutely! Chuk Artifacts is framework-agnostic. Initialize the store at startup and use it in your request handlers.
+
+### Q: Is it production ready?
+
+**A:** Yes! It's designed for production with:
+- High performance (3,000+ ops/sec)
+- Multiple storage backends
+- Session-based security
+- Comprehensive error handling
+- Redis support for clustering
 
 ---
 
-**Made with ❤️ for secure, scalable artifact storage**
+## Next Steps
 
-*Production-ready artifact storage with mandatory session security and grid architecture*
+1. **Try it out**: `pip install chuk-artifacts`
+2. **Start simple**: Use the default memory providers
+3. **Add persistence**: Switch to filesystem or S3
+4. **Scale up**: Add Redis for production
+5. **Secure it**: Use session-based isolation
+
+**Ready to build something awesome?** 🚀

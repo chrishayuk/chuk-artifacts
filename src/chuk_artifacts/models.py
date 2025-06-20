@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/models.py
 from typing import Any, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ArtifactEnvelope(BaseModel):
@@ -19,5 +19,5 @@ class ArtifactEnvelope(BaseModel):
     summary: str                            # human-readable description / alt
     meta: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        extra = "allow"                     # future-proof: lets tools add keys
+    # Pydantic V2 configuration using ConfigDict
+    model_config = ConfigDict(extra="allow")  # future-proof: lets tools add keys

@@ -53,6 +53,7 @@ class MetadataOperations:
             # Delete metadata from session provider
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
+                # Fix: hasattr is not async, don't await it
                 if hasattr(session, 'delete'):
                     await session.delete(artifact_id)
             

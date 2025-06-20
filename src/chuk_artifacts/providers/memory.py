@@ -36,6 +36,7 @@ class _MemoryS3Client:
             If None, creates isolated per-instance storage.
         """
         self._store: Dict[str, Dict[str, Any]] = shared_store if shared_store is not None else {}
+        self._is_shared_store = shared_store is not None
         self._lock = asyncio.Lock()
         self._closed = False
         
@@ -231,8 +232,11 @@ class _MemoryS3Client:
     async def close(self):
         """Clean up resources and mark client as closed."""
         if not self._closed:
-            async with self._lock:
-                self._store.clear()
+            # Only clear the store if it's NOT shared
+            # If it's shared, other clients may still need the data
+            if not self._is_shared_store:
+                async with self._lock:
+                    self._store.clear()
             self._closed = True
 
     # ------------------------------------------------------------
@@ -253,6 +257,10 @@ class _MemoryS3Client:
                 "total_objects": total_objects,
                 "total_bytes": total_bytes,
                 "closed": self._closed,
+                "is_shared_store": self._is_shared_store,
+                "store_id": id(self._store),  # Memory address for debugging
+                "client_id": id(self),        # Client instance ID
+                "store_keys": list(self._store.keys())[:5],  # First 5 keys for debugging
             }
 
     @classmethod
@@ -263,17 +271,32 @@ class _MemoryS3Client:
 
 # ---- public factory -------------------------------------------------------
 
+# Global shared storage for memory provider when used as default
+_default_shared_store: Dict[str, Dict[str, Any]] = {}
+
 def factory(shared_store: Optional[Dict[str, Dict[str, Any]]] = None) -> Callable[[], AsyncContextManager]:
     """
     Return a **zero-arg** factory that yields an async-context client.
+    
+    Key behavior for memory provider:
+    - If shared_store is provided, uses that specific storage
+    - If shared_store is None, ALWAYS uses the global shared storage
+    - This ensures all memory clients in the same process share data
+    - Prevents issues where ArtifactStore operations can't see each other's data
     
     Parameters
     ----------
     shared_store : dict, optional
         If provided, all clients created by this factory will share
-        the same storage dict. Useful for testing scenarios where
-        you need multiple clients to see the same data.
+        the same storage dict. If None, will use a global shared store
+        to ensure consistency across operations within the same process.
     """
+    
+    # CRITICAL: Always use global shared storage when none specified
+    # This prevents the common issue where each ArtifactStore operation
+    # gets a different isolated storage and can't see each other's data
+    if shared_store is None:
+        shared_store = _default_shared_store
 
     @asynccontextmanager
     async def _ctx():
@@ -307,6 +330,11 @@ async def clear_all_memory_stores():
     Emergency cleanup function that clears all active memory stores.
     Useful for test teardown.
     """
+    # Clear the global shared store
+    global _default_shared_store
+    _default_shared_store.clear()
+    
+    # Close all active instances
     instances = list(_MemoryS3Client._instances)
     for instance in instances:
         try:
