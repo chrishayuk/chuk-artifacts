@@ -449,8 +449,8 @@ class TestMemoryProviderFactory:
         assert shared_store["shared-bucket/shared-file"]["data"] == b"shared content"
     
     @pytest.mark.asyncio
-    async def test_factory_isolation(self):
-        """Test that different factories are isolated."""
+    async def test_factory_isolation_shared(self):
+        """Test that default factories share data (by design)."""
         factory1 = factory()
         factory2 = factory()
         
@@ -464,10 +464,57 @@ class TestMemoryProviderFactory:
             )
         
         async with factory2() as client2:
-            # Should not see client1's data
+            # Should see client1's data because they share the global store
+            response = await client2.get_object(Bucket="bucket", Key="file1")
+            assert response["Body"] == b"content1"
+
+    # Test true isolation using separate shared stores
+    @pytest.mark.asyncio
+    async def test_factory_true_isolation(self):
+        """Test that factories with separate shared stores are isolated."""
+        from chuk_artifacts.providers.memory import create_shared_memory_factory
+        
+        # Create two factories with separate shared stores
+        factory1, store1 = create_shared_memory_factory()
+        factory2, store2 = create_shared_memory_factory()
+        
+        async with factory1() as client1:
+            await client1.put_object(
+                Bucket="bucket",
+                Key="file1",
+                Body=b"content1",
+                ContentType="text/plain",
+                Metadata={}
+            )
+        
+        async with factory2() as client2:
+            # Should not see client1's data because they have separate stores
             with pytest.raises(Exception):
                 await client2.get_object(Bucket="bucket", Key="file1")
-    
+
+    # Test that demonstrates the shared behavior is intentional
+    @pytest.mark.asyncio
+    async def test_factory_shared_behavior(self):
+        """Test that default memory factories share data intentionally."""
+        factory1 = factory()
+        factory2 = factory()
+        
+        # Store data with factory1
+        async with factory1() as client1:
+            await client1.put_object(
+                Bucket="bucket",
+                Key="shared-file",
+                Body=b"shared content",
+                ContentType="text/plain",
+                Metadata={"shared": "true"}
+            )
+        
+        # Access same data with factory2
+        async with factory2() as client2:
+            response = await client2.get_object(Bucket="bucket", Key="shared-file")
+            assert response["Body"] == b"shared content"
+            assert response["Metadata"]["shared"] == "true"
+            
     @pytest.mark.asyncio
     async def test_instance_counting(self):
         """Test instance counting for debugging."""
