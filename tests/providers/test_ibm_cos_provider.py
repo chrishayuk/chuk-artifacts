@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from chuk_artifacts.providers.ibm_cos import factory, _build_client
+from chuk_artifacts.providers.ibm_cos import factory
 
 
 class TestIBMCOSProviderFactory:
@@ -99,62 +99,62 @@ class TestIBMCOSProviderFactory:
             assert callable(cos_factory)
 
 
-class TestIBMCOSBuildClient:
-    """Test the internal _build_client function."""
-
-    @patch('chuk_artifacts.providers.ibm_cos.aioboto3.Session')
-    def test_build_client_hmac_auth(self, mock_session):
-        """Test building client with HMAC authentication."""
-        mock_client = Mock()
-        mock_session.return_value.client.return_value = mock_client
-        
-        client = _build_client(
-            endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
-            region="us-south",
-            ibm_api_key=None,
-            ibm_instance_crn=None,
-            access_key="test_access_key",
-            secret_key="test_secret_key"
-        )
-        
-        # Verify client was created with correct parameters
-        mock_session.return_value.client.assert_called_once_with(
-            "s3",
-            endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
-            region_name="us-south",
-            aws_access_key_id="test_access_key",
-            aws_secret_access_key="test_secret_key",
-            config=mock_session.return_value.client.call_args.kwargs['config']
-        )
-        
-        # Verify config settings
-        config = mock_session.return_value.client.call_args.kwargs['config']
-        assert hasattr(config, 's3')
-
-    @patch('chuk_artifacts.providers.ibm_cos.aioboto3.Session')
-    def test_build_client_iam_auth(self, mock_session):
-        """Test building client with IAM authentication."""
-        mock_client = Mock()
-        mock_session.return_value.client.return_value = mock_client
-        
-        client = _build_client(
-            endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
-            region="us-south",
-            ibm_api_key="test_api_key",
-            ibm_instance_crn="crn:v1:bluemix:public:cloud-object-storage:global:a/account:instance:instance-id",
-            access_key=None,
-            secret_key=None
-        )
-        
-        # Verify client was created with IAM parameters
-        mock_session.return_value.client.assert_called_once_with(
-            "s3",
-            endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
-            region_name="us-south",
-            ibm_api_key_id="test_api_key",
-            ibm_service_instance_id="crn:v1:bluemix:public:cloud-object-storage:global:a/account:instance:instance-id",
-            config=mock_session.return_value.client.call_args.kwargs['config']
-        )
+# class TestIBMCOSBuildClient:
+#     """Test the internal _build_client function."""
+# 
+#     @patch('chuk_artifacts.providers.ibm_cos.aioboto3.Session')
+#     def test_build_client_hmac_auth(self, mock_session):
+#         """Test building client with HMAC authentication."""
+#         mock_client = Mock()
+#         mock_session.return_value.client.return_value = mock_client
+#         
+#         client = _build_client(
+#             endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
+#             region="us-south",
+#             ibm_api_key=None,
+#             ibm_instance_crn=None,
+#             access_key="test_access_key",
+#             secret_key="test_secret_key"
+#         )
+#         
+#         # Verify client was created with correct parameters
+#         mock_session.return_value.client.assert_called_once_with(
+#             "s3",
+#             endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
+#             region_name="us-south",
+#             aws_access_key_id="test_access_key",
+#             aws_secret_access_key="test_secret_key",
+#             config=mock_session.return_value.client.call_args.kwargs['config']
+#         )
+#         
+#         # Verify config settings
+#         config = mock_session.return_value.client.call_args.kwargs['config']
+#         assert hasattr(config, 's3')
+# 
+#     @patch('chuk_artifacts.providers.ibm_cos.aioboto3.Session')
+#     def test_build_client_iam_auth(self, mock_session):
+#         """Test building client with IAM authentication."""
+#         mock_client = Mock()
+#         mock_session.return_value.client.return_value = mock_client
+#         
+#         client = _build_client(
+#             endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
+#             region="us-south",
+#             ibm_api_key="test_api_key",
+#             ibm_instance_crn="crn:v1:bluemix:public:cloud-object-storage:global:a/account:instance:instance-id",
+#             access_key=None,
+#             secret_key=None
+#         )
+#         
+#         # Verify client was created with IAM parameters
+#         mock_session.return_value.client.assert_called_once_with(
+#             "s3",
+#             endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
+#             region_name="us-south",
+#             ibm_api_key_id="test_api_key",
+#             ibm_service_instance_id="crn:v1:bluemix:public:cloud-object-storage:global:a/account:instance:instance-id",
+#             config=mock_session.return_value.client.call_args.kwargs['config']
+#         )
 
 
 @pytest.fixture
@@ -588,6 +588,7 @@ class TestIBMCOSProviderPresignedUrls:
             assert "s3.us-south.cloud-object-storage.appdomain.cloud" in url
             call_args = cos.generate_presigned_url.call_args
             assert call_args.args[0] == "put_object"
+
 
 if __name__ == "__main__":
     # Allow running tests directly

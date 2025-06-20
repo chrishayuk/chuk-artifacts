@@ -4,28 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chuk-artifacts"
-version = "0.3"
+version = "0.4"
 description = "Chuk Artifacts provides a production-ready, modular artifact storage system that works seamlessly across multiple storage backends (memory, filesystem, AWS S3, IBM Cloud Object Storage) with Redis or memory-based metadata caching and strict session-based security."
 readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-  "chuk-tool-processor>=0.4",
   "pydantic>=2.10.6",
   "pyyaml>=6.0.2",
   "aioboto3>=14.3.0",
   "redis>=6.2.0",
   "ibm-cos-sdk>=2.13.5",
   "chuk-sessions>=0.3",
+  "dotenv>=0.9.9",
+  "asyncio>=3.4.3",
 ]
 
 [project.optional-dependencies]
-websocket = ["websockets>=10.0"]
 dev = [
   "pytest>=8.3.5",
-  "pytest-asyncio>=0.26.0",
   "ruff>=0.4.6",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["chuk_artifacts*"]
 
 [tool.pytest.ini_options]
 # Pytest configuration for chuk-artifacts
@@ -54,4 +57,9 @@ filterwarnings = [
     "ignore::DeprecationWarning:chuk_sessions.*",
     "ignore::pytest.PytestDeprecationWarning",
     "ignore::pytest.PytestUnknownMarkWarning"
+]
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.0.0",
 ]
