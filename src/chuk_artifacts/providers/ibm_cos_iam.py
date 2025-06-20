@@ -5,6 +5,11 @@ Async wrapper for IBM Cloud Object Storage using IAM API-key (oauth).
 
 ✓ Fits the aioboto3-style interface that ArtifactStore expects:
     • async put_object(...)
+    • async get_object(...)
+    • async head_object(...)
+    • async delete_object(...)
+    • async list_objects_v2(...)
+    • async head_bucket(...)
     • async generate_presigned_url(...)
 ✓ No HMAC keys required - just IBM_COS_APIKEY + IBM_COS_INSTANCE_CRN.
 
@@ -27,6 +32,7 @@ from ibm_botocore.client import Config
 
 # ─────────────────────────────────────────────────────────────────────
 def _sync_client():
+    """Create synchronous IBM COS client with IAM authentication."""
     endpoint = os.getenv(
         "IBM_COS_ENDPOINT",
         "https://s3.us-south.cloud-object-storage.appdomain.cloud",
@@ -49,19 +55,52 @@ def _sync_client():
 
 # ─────────────────────────────────────────────────────────────────────
 class _AsyncIBMClient:
-    """Minimal async façade over synchronous ibm_boto3 S3 client."""
+    """Complete async façade over synchronous ibm_boto3 S3 client."""
+    
     def __init__(self, sync_client):
         self._c = sync_client
 
-    # ---- methods used by ArtifactStore -------------------------------------
-    async def put_object(self, **kw) -> Dict[str, Any]:
-        return await asyncio.to_thread(self._c.put_object, **kw)
+    # ---- Core S3 operations used by ArtifactStore -------------------------
+    async def put_object(self, **kwargs) -> Dict[str, Any]:
+        """Store object in IBM COS."""
+        return await asyncio.to_thread(self._c.put_object, **kwargs)
 
-    async def generate_presigned_url(self, *a, **kw) -> str:
-        return await asyncio.to_thread(self._c.generate_presigned_url, *a, **kw)
+    async def get_object(self, **kwargs) -> Dict[str, Any]:
+        """Retrieve object from IBM COS."""
+        return await asyncio.to_thread(self._c.get_object, **kwargs)
 
-    # ---- cleanup -----------------------------------------------------------
+    async def head_object(self, **kwargs) -> Dict[str, Any]:
+        """Get object metadata from IBM COS."""
+        return await asyncio.to_thread(self._c.head_object, **kwargs)
+
+    async def delete_object(self, **kwargs) -> Dict[str, Any]:
+        """Delete object from IBM COS."""
+        return await asyncio.to_thread(self._c.delete_object, **kwargs)
+
+    async def list_objects_v2(self, **kwargs) -> Dict[str, Any]:
+        """List objects in IBM COS bucket."""
+        return await asyncio.to_thread(self._c.list_objects_v2, **kwargs)
+
+    async def head_bucket(self, **kwargs) -> Dict[str, Any]:
+        """Check if bucket exists in IBM COS."""
+        return await asyncio.to_thread(self._c.head_bucket, **kwargs)
+
+    async def generate_presigned_url(self, *args, **kwargs) -> str:
+        """Generate presigned URL for IBM COS object."""
+        return await asyncio.to_thread(self._c.generate_presigned_url, *args, **kwargs)
+
+    # ---- Additional operations for completeness ---------------------------
+    async def copy_object(self, **kwargs) -> Dict[str, Any]:
+        """Copy object within IBM COS."""
+        return await asyncio.to_thread(self._c.copy_object, **kwargs)
+
+    async def delete_objects(self, **kwargs) -> Dict[str, Any]:
+        """Delete multiple objects from IBM COS."""
+        return await asyncio.to_thread(self._c.delete_objects, **kwargs)
+
+    # ---- Cleanup -----------------------------------------------------------
     async def close(self):
+        """Close the underlying sync client."""
         await asyncio.to_thread(self._c.close)
 
 
@@ -69,6 +108,11 @@ class _AsyncIBMClient:
 def factory() -> Callable[[], AsyncContextManager]:
     """
     Return a zero-arg callable that yields an async-context-manager.
+    
+    Returns
+    -------
+    Callable[[], AsyncContextManager]
+        Factory function that creates IBM COS IAM client context managers
     """
 
     @asynccontextmanager
