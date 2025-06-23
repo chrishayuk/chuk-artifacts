@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-CHUK Sessions Example Script
+CHUK Sessions + Artifacts Integration Example
 
-This script demonstrates how to use the enhanced chuk_sessions package with
-session management, grid architecture, and different providers.
+This script demonstrates the PROPER usage of chuk_sessions with its clean API,
+showing session management and grid architecture working together.
 """
 
 import asyncio
@@ -12,44 +12,44 @@ import os
 import time
 from typing import Dict, Any
 
-# Import both the provider factory and the session manager
-from chuk_sessions.provider_factory import factory_for_env
-from chuk_sessions.session_manager import SessionManager
+# Import using the CLEAN API from chuk_sessions
+from chuk_sessions import get_session, session, SessionManager
+
+# Import artifact management
+from chuk_artifacts import ArtifactStore, ArtifactEnvelope
 
 
-async def demonstrate_basic_providers():
-    """Demonstrate basic provider usage (lower-level API)."""
+async def demonstrate_simple_session_api():
+    """Demonstrate the simple session API (best developer experience)."""
     print("=" * 70)
-    print("BASIC PROVIDER DEMONSTRATION (Lower-Level API)")
+    print("SIMPLE SESSION API DEMONSTRATION")
     print("=" * 70)
     
     # Set environment to use memory provider
     os.environ['SESSION_PROVIDER'] = 'memory'
     
-    # Get the factory and create a session
-    session_factory = factory_for_env()
-    
-    async with session_factory() as session:
-        print("✓ Created memory session provider")
+    # CLEAN API - much better than the confusing factory pattern!
+    async with get_session() as session_store:
+        print("✓ Created session store using get_session()")
         
         # Store some basic session data
         print("\n📝 Storing basic session data...")
-        await session.setex("user:123", 60, json.dumps({
+        await session_store.setex("user:123", 60, json.dumps({
             "user_id": "123",
             "username": "alice",
             "role": "admin",
             "login_time": "2024-01-01T10:00:00Z"
         }))
         
-        await session.setex("temp_token", 5, "abc123def456")
+        await session_store.setex("temp_token", 5, "abc123def456")
         
         print("   • User session (60s TTL)")
         print("   • Temp token (5s TTL)")
         
         # Retrieve data
         print("\n📖 Retrieving stored data...")
-        user_data = await session.get("user:123")
-        token = await session.get("temp_token")
+        user_data = await session_store.get("user:123")
+        token = await session_store.get("temp_token")
         
         print(f"   • User data: {json.loads(user_data)['username']}")
         print(f"   • Temp token: {token}")
@@ -59,23 +59,74 @@ async def demonstrate_basic_providers():
         print("   Waiting 6 seconds for temp token to expire...")
         await asyncio.sleep(6)
         
-        expired_token = await session.get("temp_token")
-        user_still_valid = await session.get("user:123")
+        expired_token = await session_store.get("temp_token")
+        user_still_valid = await session_store.get("user:123")
         
         print(f"   • Temp token after 6s: {expired_token}")
         print(f"   • User session still valid: {user_still_valid is not None}")
 
 
-async def demonstrate_session_manager():
-    """Demonstrate the enhanced SessionManager."""
+async def demonstrate_session_context_manager():
+    """Demonstrate the session context manager API."""
     print("\n" + "=" * 70)
-    print("SESSION MANAGER DEMONSTRATION (High-Level API)")
+    print("SESSION CONTEXT MANAGER API")
     print("=" * 70)
     
-    # Set environment for session provider
     os.environ['SESSION_PROVIDER'] = 'memory'
     
-    # Create session manager for a sandbox
+    # Even cleaner - context manager style
+    async with session() as s:
+        print("✓ Created session using session() context manager")
+        
+        # Store some application data
+        print("\n📝 Storing application data...")
+        
+        app_data = {
+            "app_name": "MyApp",
+            "version": "1.0.0", 
+            "features": ["auth", "uploads", "sharing"],
+            "config": {
+                "max_upload_size": "100MB",
+                "session_timeout": 3600
+            }
+        }
+        
+        await s.setex("app:config", 3600, json.dumps(app_data))
+        
+        # Store user preferences
+        preferences = {
+            "theme": "dark",
+            "language": "en",
+            "notifications": True,
+            "auto_save": True
+        }
+        
+        await s.setex("user:alice:preferences", 1800, json.dumps(preferences))
+        
+        print("   • App configuration stored")
+        print("   • User preferences stored")
+        
+        # Retrieve and display
+        print("\n📖 Retrieving stored data...")
+        
+        app_config = json.loads(await s.get("app:config"))
+        user_prefs = json.loads(await s.get("user:alice:preferences"))
+        
+        print(f"   • App: {app_config['app_name']} v{app_config['version']}")
+        print(f"   • Features: {', '.join(app_config['features'])}")
+        print(f"   • User theme: {user_prefs['theme']}")
+        print(f"   • Notifications: {user_prefs['notifications']}")
+
+
+async def demonstrate_session_manager():
+    """Demonstrate the high-level SessionManager API."""
+    print("\n" + "=" * 70)
+    print("SESSION MANAGER API (High-Level)")
+    print("=" * 70)
+    
+    os.environ['SESSION_PROVIDER'] = 'memory'
+    
+    # High-level session management
     session_mgr = SessionManager(
         sandbox_id="demo-app",
         default_ttl_hours=24
@@ -83,10 +134,7 @@ async def demonstrate_session_manager():
     
     print("✓ Created SessionManager for sandbox: demo-app")
     
-    # ═════════════════════════════════════════════════════════════════
     # Session Lifecycle Management
-    # ═════════════════════════════════════════════════════════════════
-    
     print("\n📝 Session Lifecycle Management...")
     
     # Create sessions for different users
@@ -107,10 +155,7 @@ async def demonstrate_session_manager():
     anon_session = await session_mgr.allocate_session()
     print(f"   • Anonymous session: {anon_session}")
     
-    # ═════════════════════════════════════════════════════════════════
     # Session Validation and Info
-    # ═════════════════════════════════════════════════════════════════
-    
     print("\n🔍 Session Validation and Information...")
     
     # Validate sessions
@@ -131,44 +176,7 @@ async def demonstrate_session_manager():
     print(f"     - Status: {alice_info['status']}")
     print(f"     - Custom data: {alice_info['custom_metadata']}")
     
-    # ═════════════════════════════════════════════════════════════════
-    # Grid Architecture Support
-    # ═════════════════════════════════════════════════════════════════
-    
-    print("\n🏗️  Grid Architecture Support...")
-    
-    # Generate grid paths
-    alice_prefix = session_mgr.get_canonical_prefix(alice_session)
-    bob_prefix = session_mgr.get_canonical_prefix(bob_session)
-    
-    print(f"   • Alice's grid prefix: {alice_prefix}")
-    print(f"   • Bob's grid prefix: {bob_prefix}")
-    
-    # Generate artifact keys
-    artifact_ids = ["doc123", "image456", "video789"]
-    
-    print(f"\n   • Alice's artifact keys:")
-    for artifact_id in artifact_ids:
-        key = session_mgr.generate_artifact_key(alice_session, artifact_id)
-        print(f"     - {artifact_id}: {key}")
-    
-    print(f"\n   • Bob's artifact keys:")
-    for artifact_id in artifact_ids:
-        key = session_mgr.generate_artifact_key(bob_session, artifact_id)
-        print(f"     - {artifact_id}: {key}")
-    
-    # Parse grid keys back
-    sample_key = session_mgr.generate_artifact_key(alice_session, "doc123")
-    parsed = session_mgr.parse_grid_key(sample_key)
-    print(f"\n   • Parsed grid key '{sample_key}':")
-    print(f"     - Sandbox: {parsed['sandbox_id']}")
-    print(f"     - Session: {parsed['session_id']}")
-    print(f"     - Artifact: {parsed['artifact_id']}")
-    
-    # ═════════════════════════════════════════════════════════════════
     # Advanced Session Operations
-    # ═════════════════════════════════════════════════════════════════
-    
     print("\n🔧 Advanced Session Operations...")
     
     # Update custom metadata
@@ -190,313 +198,261 @@ async def demonstrate_session_manager():
     alice_updated = await session_mgr.get_session_info(alice_session)
     print(f"   • Alice's updated custom metadata: {alice_updated['custom_metadata']}")
     
-    # ═════════════════════════════════════════════════════════════════
-    # Administrative Operations
-    # ═════════════════════════════════════════════════════════════════
-    
-    print("\n📊 Administrative Operations...")
-    
-    # Get cache statistics
-    stats = session_mgr.get_cache_stats()
-    print(f"   • Cache stats: {stats}")
-    
-    # Clean up expired sessions
-    cleaned = await session_mgr.cleanup_expired_sessions()
-    print(f"   • Cleaned expired sessions: {cleaned}")
-    
-    # Session prefix pattern for discovery
-    prefix_pattern = session_mgr.get_session_prefix_pattern()
-    print(f"   • Session prefix pattern: {prefix_pattern}")
+    return alice_session, bob_session, anon_session
 
 
-async def demonstrate_multi_sandbox():
-    """Demonstrate multiple sandboxes (multi-tenant scenario)."""
+async def demonstrate_artifact_store_integration():
+    """Demonstrate ArtifactStore with session integration."""
     print("\n" + "=" * 70)
-    print("MULTI-SANDBOX DEMONSTRATION (Multi-Tenant)")
+    print("ARTIFACT STORE + SESSION INTEGRATION")
     print("=" * 70)
     
+    # Set environment for both providers
+    os.environ['ARTIFACT_PROVIDER'] = 'memory'
     os.environ['SESSION_PROVIDER'] = 'memory'
     
-    # Create session managers for different sandboxes (tenants)
-    app_a_mgr = SessionManager(sandbox_id="app-a")
-    app_b_mgr = SessionManager(sandbox_id="app-b")
-    shared_mgr = SessionManager(sandbox_id="shared-services")
-    
-    print("✓ Created session managers for multiple sandboxes")
-    
-    # Create sessions in different sandboxes
-    print("\n📝 Creating sessions across sandboxes...")
-    
-    # App A sessions
-    app_a_user1 = await app_a_mgr.allocate_session(
-        user_id="alice", 
-        custom_metadata={"app": "app-a", "role": "admin"}
-    )
-    app_a_user2 = await app_a_mgr.allocate_session(
-        user_id="charlie",
-        custom_metadata={"app": "app-a", "role": "user"}
-    )
-    
-    # App B sessions  
-    app_b_user1 = await app_b_mgr.allocate_session(
-        user_id="bob",
-        custom_metadata={"app": "app-b", "role": "admin"}
-    )
-    
-    # Shared services session
-    shared_session = await shared_mgr.allocate_session(
-        user_id="system",
-        custom_metadata={"service": "notification", "role": "system"}
-    )
-    
-    print(f"   • App A - Alice: {app_a_user1}")
-    print(f"   • App A - Charlie: {app_a_user2}")
-    print(f"   • App B - Bob: {app_b_user1}")
-    print(f"   • Shared - System: {shared_session}")
-    
-    # Show grid path isolation
-    print("\n🏗️  Grid Path Isolation...")
-    
-    artifact_id = "document123"
-    
-    app_a_alice_key = app_a_mgr.generate_artifact_key(app_a_user1, artifact_id)
-    app_a_charlie_key = app_a_mgr.generate_artifact_key(app_a_user2, artifact_id)
-    app_b_bob_key = app_b_mgr.generate_artifact_key(app_b_user1, artifact_id)
-    shared_key = shared_mgr.generate_artifact_key(shared_session, artifact_id)
-    
-    print(f"   • App A (Alice): {app_a_alice_key}")
-    print(f"   • App A (Charlie): {app_a_charlie_key}")
-    print(f"   • App B (Bob): {app_b_bob_key}")
-    print(f"   • Shared Services: {shared_key}")
-    
-    print("\n✅ Each sandbox has isolated grid paths")
-    print("✅ Same user in different sandboxes = different sessions")
-    print("✅ Perfect for multi-tenant applications")
+    # Create artifact store (this will use chuk_sessions internally)
+    async with ArtifactStore(sandbox_id="demo-app") as store:
+        print("✓ Created ArtifactStore with session integration")
+        
+        # The artifact store automatically manages sessions using chuk_sessions
+        print("\n📝 Storing artifacts with automatic session management...")
+        
+        # Store some artifacts (sessions are auto-allocated via chuk_sessions)
+        artifact1_id = await store.store(
+            data=b"Hello, world! This is a test document.",
+            mime="text/plain",
+            summary="Test document",
+            filename="hello.txt",
+            user_id="alice"
+        )
+        print(f"   • Stored artifact 1: {artifact1_id}")
+        
+        artifact2_id = await store.store(
+            data=b"{'data': 'some json content'}",
+            mime="application/json", 
+            summary="JSON data file",
+            filename="data.json",
+            user_id="alice"  # Same user, should reuse session
+        )
+        print(f"   • Stored artifact 2: {artifact2_id}")
+        
+        artifact3_id = await store.store(
+            data=b"Bob's private document",
+            mime="text/plain",
+            summary="Bob's document", 
+            filename="bob_doc.txt",
+            user_id="bob"  # Different user, different session
+        )
+        print(f"   • Stored artifact 3: {artifact3_id}")
+        
+        # Grid Architecture Demonstration
+        print("\n🏗️  Grid Architecture Support...")
+        
+        # Get metadata to see grid paths (generated automatically by chuk_sessions integration)
+        meta1 = await store.metadata(artifact1_id)
+        meta2 = await store.metadata(artifact2_id)
+        meta3 = await store.metadata(artifact3_id)
+        
+        print(f"   • Alice's artifacts (same session via chuk_sessions):")
+        print(f"     - Artifact 1 key: {meta1['key']}")
+        print(f"     - Artifact 2 key: {meta2['key']}")
+        print(f"     - Session ID: {meta1['session_id']}")
+        
+        print(f"\n   • Bob's artifacts (different session via chuk_sessions):")
+        print(f"     - Artifact 3 key: {meta3['key']}")
+        print(f"     - Session ID: {meta3['session_id']}")
+        
+        # Demonstrate grid key parsing (ArtifactStore functionality)
+        parsed1 = store.parse_grid_key(meta1['key'])
+        parsed3 = store.parse_grid_key(meta3['key'])
+        
+        print(f"\n   • Parsed Alice's key:")
+        print(f"     - Sandbox: {parsed1['sandbox_id']}")
+        print(f"     - Session: {parsed1['session_id']}")
+        print(f"     - Artifact: {parsed1['artifact_id']}")
+        
+        print(f"\n   • Parsed Bob's key:")
+        print(f"     - Sandbox: {parsed3['sandbox_id']}")
+        print(f"     - Session: {parsed3['session_id']}")
+        print(f"     - Artifact: {parsed3['artifact_id']}")
+        
+        # List artifacts by session
+        print("\n📋 Listing artifacts by session...")
+        
+        alice_session_id = meta1['session_id']
+        bob_session_id = meta3['session_id']
+        
+        alice_artifacts = await store.list_by_session(alice_session_id)
+        bob_artifacts = await store.list_by_session(bob_session_id)
+        
+        print(f"   • Alice's session has {len(alice_artifacts)} artifacts")
+        for artifact in alice_artifacts:
+            print(f"     - {artifact['filename']}: {artifact['summary']}")
+        
+        print(f"   • Bob's session has {len(bob_artifacts)} artifacts")
+        for artifact in bob_artifacts:
+            print(f"     - {artifact['filename']}: {artifact['summary']}")
+        
+        return store, {
+            'alice_artifacts': [artifact1_id, artifact2_id],
+            'bob_artifacts': [artifact3_id],
+            'alice_session': alice_session_id,
+            'bob_session': bob_session_id
+        }
 
 
-async def demonstrate_real_world_scenarios():
-    """Demonstrate real-world usage scenarios."""
+async def demonstrate_real_world_usage():
+    """Demonstrate real-world usage patterns."""
     print("\n" + "=" * 70)
-    print("REAL-WORLD SCENARIOS DEMONSTRATION")
+    print("REAL-WORLD USAGE PATTERNS")
     print("=" * 70)
     
+    # Scenario: Web application with user sessions and file uploads
+    print("🌐 Scenario: Web Application with File Uploads")
+    
+    os.environ['ARTIFACT_PROVIDER'] = 'memory'
     os.environ['SESSION_PROVIDER'] = 'memory'
     
-    # ═════════════════════════════════════════════════════════════════
-    # Scenario 1: Web Application Session Management
-    # ═════════════════════════════════════════════════════════════════
+    # Method 1: Direct session management with chuk_sessions
+    print("\n   📝 Method 1: Direct session management")
     
-    print("🌐 Scenario 1: Web Application Session Management")
-    
-    web_app_mgr = SessionManager(
-        sandbox_id="webapp-prod",
-        default_ttl_hours=8  # 8-hour work day sessions
-    )
-    
-    # User login
-    user_session = await web_app_mgr.allocate_session(
-        user_id="user123",
-        custom_metadata={
-            "login_method": "oauth",
-            "ip_address": "192.168.1.100",
-            "user_agent": "Mozilla/5.0...",
+    async with get_session() as session_store:
+        # Store user authentication data
+        user_auth = {
+            "user_id": "alice123",
+            "email": "alice@company.com",
+            "role": "editor",
+            "login_time": time.time(),
             "permissions": ["read", "write", "upload"]
         }
-    )
-    
-    print(f"   • User login session: {user_session}")
-    
-    # Simulate user activity (file uploads)
-    artifact_keys = []
-    for i in range(3):
-        artifact_id = f"upload_{i}_{int(time.time())}"
-        key = web_app_mgr.generate_artifact_key(user_session, artifact_id)
-        artifact_keys.append(key)
-    
-    print(f"   • Generated {len(artifact_keys)} artifact keys")
-    
-    # Update session with activity
-    await web_app_mgr.update_session_metadata(
-        user_session,
-        {
-            "last_activity": time.time(),
-            "files_uploaded": len(artifact_keys),
-            "session_duration_minutes": 45
+        
+        await session_store.setex("auth:alice123", 3600, json.dumps(user_auth))
+        print("   • Stored user authentication in session")
+        
+        # Store temporary upload metadata
+        upload_meta = {
+            "upload_id": "upload_789",
+            "filename": "presentation.pdf",
+            "size": 2048576,
+            "status": "processing"
         }
-    )
+        
+        await session_store.setex("upload:upload_789", 300, json.dumps(upload_meta))
+        print("   • Stored temporary upload metadata")
+        
+        # Retrieve and verify
+        auth_data = json.loads(await session_store.get("auth:alice123"))
+        upload_data = json.loads(await session_store.get("upload:upload_789"))
+        
+        print(f"   • User {auth_data['email']} has role: {auth_data['role']}")
+        print(f"   • Upload {upload_data['filename']} status: {upload_data['status']}")
     
-    session_info = await web_app_mgr.get_session_info(user_session)
-    print(f"   • Session activity: {session_info['custom_metadata']['files_uploaded']} files uploaded")
+    # Method 2: Integrated artifact + session management
+    print("\n   📁 Method 2: Integrated artifact + session management")
     
-    # ═════════════════════════════════════════════════════════════════
-    # Scenario 2: MCP Server Integration
-    # ═════════════════════════════════════════════════════════════════
-    
-    print("\n🤖 Scenario 2: MCP Server Integration")
-    
-    mcp_mgr = SessionManager(
-        sandbox_id="mcp-server",
-        default_ttl_hours=24
-    )
-    
-    # Claude conversation session
-    claude_session = await mcp_mgr.allocate_session(
-        user_id="claude_conversation",
-        custom_metadata={
-            "client": "claude",
-            "conversation_id": "conv_abc123",
-            "tools_enabled": ["file_read", "file_write", "file_list"],
-            "safety_level": "standard"
-        }
-    )
-    
-    print(f"   • Claude session: {claude_session}")
-    
-    # Generate keys for MCP tools
-    mcp_operations = [
-        ("read_document", "doc_analysis_1"),
-        ("write_report", "report_2024_q1"),
-        ("upload_image", "diagram_flowchart"),
-        ("create_summary", "meeting_notes_jan")
-    ]
-    
-    print("   • MCP tool operations:")
-    for operation, artifact_id in mcp_operations:
-        key = mcp_mgr.generate_artifact_key(claude_session, artifact_id)
-        print(f"     - {operation}: {key}")
-    
-    # ═════════════════════════════════════════════════════════════════
-    # Scenario 3: API Rate Limiting & Caching
-    # ═════════════════════════════════════════════════════════════════
-    
-    print("\n⚡ Scenario 3: API Rate Limiting & Caching")
-    
-    api_mgr = SessionManager(
-        sandbox_id="api-gateway",
-        default_ttl_hours=1  # Short-lived for rate limiting
-    )
-    
-    # API client sessions
-    api_sessions = []
-    for client_id in ["client_alpha", "client_beta", "client_gamma"]:
-        session = await api_mgr.allocate_session(
-            user_id=client_id,
-            ttl_hours=1,
-            custom_metadata={
-                "api_tier": "premium" if client_id == "client_alpha" else "standard",
-                "rate_limit": 1000 if client_id == "client_alpha" else 100,
-                "requests_made": 0
-            }
+    async with ArtifactStore(sandbox_id="webapp") as store:
+        # Upload files with automatic session management
+        pdf_id = await store.store(
+            data=b"[PDF content would be here]",
+            mime="application/pdf",
+            summary="Company presentation",
+            filename="presentation.pdf",
+            user_id="alice123",
+            meta={"department": "marketing", "confidential": False}
         )
-        api_sessions.append((client_id, session))
-    
-    for client_id, session in api_sessions:
-        info = await api_mgr.get_session_info(session)
-        tier = info['custom_metadata']['api_tier']
-        limit = info['custom_metadata']['rate_limit']
-        print(f"   • {client_id}: {tier} tier, {limit} requests/hour")
+        
+        image_id = await store.store(
+            data=b"[Image content would be here]",
+            mime="image/png", 
+            summary="Chart for presentation",
+            filename="sales_chart.png",
+            user_id="alice123",
+            meta={"department": "marketing", "confidential": False}
+        )
+        
+        print(f"   • Uploaded PDF: {pdf_id}")
+        print(f"   • Uploaded image: {image_id}")
+        
+        # Show how sessions are automatically managed
+        pdf_meta = await store.metadata(pdf_id)
+        image_meta = await store.metadata(image_id)
+        
+        print(f"   • Both files in same session: {pdf_meta['session_id'] == image_meta['session_id']}")
+        print(f"   • Grid organization: {pdf_meta['key']}")
 
 
-async def demonstrate_error_handling():
-    """Demonstrate error handling and edge cases."""
+async def demonstrate_api_comparison():
+    """Show the API progression from simple to advanced."""
     print("\n" + "=" * 70)
-    print("ERROR HANDLING & EDGE CASES")
+    print("API PROGRESSION: Simple → Advanced")
     print("=" * 70)
     
     os.environ['SESSION_PROVIDER'] = 'memory'
+    os.environ['ARTIFACT_PROVIDER'] = 'memory'
     
-    session_mgr = SessionManager(sandbox_id="error-test")
+    # Level 1: Simple session storage
+    print("📍 Level 1: Simple session storage")
+    async with get_session() as s:
+        await s.setex("simple_key", 60, "simple_value")
+        value = await s.get("simple_key")
+        print(f"   • Stored and retrieved: {value}")
     
-    print("🧪 Testing error conditions...")
-    
-    # Test invalid session operations
-    invalid_session = "invalid_session_id_12345"
-    
-    valid = await session_mgr.validate_session(invalid_session)
-    info = await session_mgr.get_session_info(invalid_session)
-    updated = await session_mgr.update_session_metadata(invalid_session, {"test": "data"})
-    extended = await session_mgr.extend_session_ttl(invalid_session, 1)
-    deleted = await session_mgr.delete_session(invalid_session)
-    
-    print(f"   • Invalid session validation: {valid}")
-    print(f"   • Invalid session info: {info}")
-    print(f"   • Invalid session update: {updated}")
-    print(f"   • Invalid session TTL extend: {extended}")
-    print(f"   • Invalid session delete: {deleted}")
-    
-    # Test edge cases with grid keys
-    print("\n🔍 Testing grid key parsing...")
-    
-    test_keys = [
-        "grid/sandbox/session/artifact",           # Valid
-        "grid/sandbox/session/artifact/subpath",   # Valid with subpath
-        "invalid/path/structure",                  # Invalid
-        "grid/only/two/parts",                     # Invalid
-        "",                                        # Empty
-        "grid/sandbox/session/"                    # Missing artifact
-    ]
-    
-    for key in test_keys:
-        parsed = session_mgr.parse_grid_key(key)
-        status = "✓" if parsed else "✗"
-        print(f"   • {status} '{key}': {parsed}")
-    
-    # Test session cleanup
-    print("\n🧹 Testing session cleanup...")
-    
-    # Create a short-lived session for testing
-    temp_session = await session_mgr.allocate_session(
-        user_id="temp_user",
-        ttl_hours=0.001,  # Very short TTL (3.6 seconds)
-        custom_metadata={"test": "cleanup"}
+    # Level 2: Session management with metadata
+    print("\n📍 Level 2: Session management with metadata")
+    session_mgr = SessionManager(sandbox_id="api-demo")
+    user_session = await session_mgr.allocate_session(
+        user_id="demo_user",
+        custom_metadata={"api_level": "intermediate"}
     )
+    print(f"   • Allocated managed session: {user_session}")
     
-    print(f"   • Created temp session: {temp_session}")
-    
-    # Wait for expiration
-    await asyncio.sleep(4)
-    
-    # Try to validate expired session
-    still_valid = await session_mgr.validate_session(temp_session)
-    print(f"   • Temp session valid after expiration: {still_valid}")
-    
-    # Cleanup expired sessions
-    cleaned = await session_mgr.cleanup_expired_sessions()
-    print(f"   • Cleaned up {cleaned} expired sessions")
+    # Level 3: Full artifact + session integration
+    print("\n📍 Level 3: Full artifact + session integration")
+    async with ArtifactStore(sandbox_id="api-demo") as store:
+        artifact_id = await store.store(
+            data=b"Advanced usage example",
+            mime="text/plain",
+            summary="API demo file",
+            user_id="demo_user"
+        )
+        print(f"   • Stored artifact with auto session: {artifact_id}")
+        
+        # Show the full integration
+        meta = await store.metadata(artifact_id)
+        print(f"   • Artifact stored in grid path: {meta['key']}")
+        print(f"   • Session automatically managed by chuk_sessions")
 
 
 async def main():
-    """Run all demonstrations."""
-    print("🎯 ENHANCED CHUK Sessions Package Demonstration")
-    print("📦 Package: chuk_sessions")
-    print("🔧 Features: Session management, grid architecture, multi-provider support")
+    """Run all demonstrations using proper chuk_sessions API."""
+    print("🎯 CHUK Sessions + Artifacts Integration (PROPER API)")
+    print("📦 Using clean chuk_sessions API: get_session(), session(), SessionManager")
+    print("🔧 No confusing factory patterns - just clean, intuitive functions!")
     
     try:
-        await demonstrate_basic_providers()
+        await demonstrate_simple_session_api()
+        await demonstrate_session_context_manager()
         await demonstrate_session_manager()
-        await demonstrate_multi_sandbox()
-        await demonstrate_real_world_scenarios()
-        await demonstrate_error_handling()
+        await demonstrate_artifact_store_integration()
+        await demonstrate_real_world_usage()
+        await demonstrate_api_comparison()
         
         print("\n" + "=" * 70)
         print("✅ ALL DEMONSTRATIONS COMPLETED SUCCESSFULLY")
         print("=" * 70)
-        print("\n📚 Enhanced Features Demonstrated:")
-        print("   • Basic provider API (memory/redis)")
-        print("   • High-level SessionManager API")
-        print("   • Grid architecture with path generation")
-        print("   • Multi-sandbox isolation (multi-tenant)")
-        print("   • Real-world scenarios (web apps, MCP, APIs)")
-        print("   • Session lifecycle management")
-        print("   • Custom metadata and TTL extensions")
-        print("   • Comprehensive error handling")
-        print("   • Administrative operations")
-        print("\n🚀 Ready for production use in:")
-        print("   • Web applications")
-        print("   • MCP servers")  
-        print("   • API gateways")
-        print("   • Multi-tenant systems")
-        print("   • Microservices architectures")
+        print("\n📚 Clean API Features Demonstrated:")
+        print("   • get_session() - Simple session store access")
+        print("   • session() - Context manager for session operations")
+        print("   • SessionManager - High-level session lifecycle management")
+        print("   • ArtifactStore integration - Automatic session handling")
+        print("   • Grid architecture - Organized storage paths")
+        print("   • Multi-level API - From simple to advanced usage")
+        print("\n🎉 Much better developer experience!")
+        print("   • No confusing factory patterns")
+        print("   • Intuitive function names")
+        print("   • Clean import statements")
+        print("   • Progressive complexity")
         
     except Exception as e:
         print(f"\n❌ Error during demonstration: {e}")
@@ -506,7 +462,7 @@ async def main():
 
 if __name__ == "__main__":
     # Clean up environment variables at start
-    for var in ['SESSION_PROVIDER', 'SESSION_REDIS_URL']:
+    for var in ['SESSION_PROVIDER', 'ARTIFACT_PROVIDER', 'SESSION_REDIS_URL']:
         if var in os.environ:
             del os.environ[var]
     

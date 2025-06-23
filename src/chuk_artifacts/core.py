@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .store import ArtifactStore
 
-from .exceptions import ArtifactStoreError, ProviderError, SessionError
+from .exceptions import ArtifactStoreError, ProviderError, SessionError, ArtifactNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -102,44 +102,55 @@ class CoreStorageOperations:
                 raise ProviderError(f"Storage failed: {e}") from e
 
     async def update_file(
-            self,
-            artifact_id: str,
-            new_data: bytes,
-            *,
-            mime: Optional[str] = None,
-            summary: Optional[str] = None,
-            meta: Optional[Dict[str, Any]] = None,
-            filename: Optional[str] = None,
-            ttl: Optional[int] = None,
-        ) -> None:
-            """
-            Update the contents of an existing artifact.
+        self,
+        artifact_id: str,
+        new_data: Optional[bytes] = None,
+        *,
+        mime: Optional[str] = None,
+        summary: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+        ttl: Optional[int] = None,
+    ) -> bool:
+        """
+        Update an artifact's content, metadata, filename, summary, or mime type.
+        
+        Parameters
+        ----------
+        artifact_id : str
+            ID of the artifact to update
+        new_data : bytes, optional
+            New data to overwrite the existing artifact
+        mime : str, optional
+            New MIME type
+        summary : str, optional
+            New summary
+        meta : dict, optional
+            Updated metadata
+        filename : str, optional
+            New filename
+        ttl : int, optional
+            New TTL
+            
+        Returns
+        -------
+        bool
+            True if update was successful
+        """
+        if self.artifact_store._closed:
+            raise ArtifactStoreError("Store is closed")
 
-            Parameters
-            ----------
-            artifact_id : str
-                ID of the artifact to update.
-            new_data : bytes
-                New data to overwrite the existing artifact.
-            mime : Optional[str]
-                Optional new MIME type.
-            summary : Optional[str]
-                Optional new summary.
-            meta : Optional[Dict[str, Any]]
-                Optional updated metadata.
-            filename : Optional[str]
-                Optional new filename.
-            ttl : Optional[int]
-                Optional TTL to reset (if provided).
-            """
-            if self.artifact_store._closed:
-                raise ArtifactStoreError("Store is closed")
+        if not any([new_data is not None, meta is not None, filename is not None, 
+                   summary is not None, mime is not None, ttl is not None]):
+            raise ValueError("At least one update parameter must be provided.")
 
-            try:
-                record = await self._get_record(artifact_id)
-                key = record["key"]
-                session_id = record["session_id"]
+        try:
+            record = await self._get_record(artifact_id)
+            key = record["key"]
+            session_id = record["session_id"]
 
+            # Update data if provided
+            if new_data is not None:
                 # Overwrite in object storage
                 await self._store_with_retry(
                     new_data,
@@ -148,31 +159,37 @@ class CoreStorageOperations:
                     filename or record.get("filename"),
                     session_id,
                 )
+                
+                # Update size and hash in metadata
+                record["bytes"] = len(new_data)
+                record["sha256"] = hashlib.sha256(new_data).hexdigest()
 
-                # Update metadata
-                record.update({
-                    "mime": mime or record["mime"],
-                    "summary": summary or record["summary"],
-                    "meta": meta or record["meta"],
-                    "filename": filename or record.get("filename"),
-                    "bytes": len(new_data),
-                    "sha256": hashlib.sha256(new_data).hexdigest(),
-                    "updated_at": datetime.utcnow().isoformat() + "Z",
-                     "ttl": ttl or record["ttl"],
-                })
+            # Update metadata fields
+            if mime is not None:
+                record["mime"] = mime
+            if summary is not None:
+                record["summary"] = summary
+            if filename is not None:
+                record["filename"] = filename
+            if meta is not None:
+                record["meta"] = meta
+            if ttl is not None:
+                record["ttl"] = ttl
 
-                if ttl is not None:
-                    record["ttl"] = ttl
+            # Add update timestamp
+            record["updated_at"] = datetime.utcnow().isoformat() + "Z"
 
-                session_ctx_mgr = self.artifact_store._session_factory()
-                async with session_ctx_mgr as session:
-                    await session.setex(artifact_id, record["ttl"], json.dumps(record))
+            # Store updated metadata
+            session_ctx_mgr = self.artifact_store._session_factory()
+            async with session_ctx_mgr as session:
+                await session.setex(artifact_id, record["ttl"], json.dumps(record))
 
-                logger.info("Artifact updated successfully", extra={"artifact_id": artifact_id})
+            logger.info("Artifact updated successfully", extra={"artifact_id": artifact_id})
+            return True
 
-            except Exception as e:
-                logger.error(f"Update failed for artifact {artifact_id}: {e}")
-                raise ProviderError(f"Artifact update failed: {e}") from e
+        except Exception as e:
+            logger.error(f"Update failed for artifact {artifact_id}: {e}")
+            raise ProviderError(f"Artifact update failed: {e}") from e
             
     async def retrieve(self, artifact_id: str) -> bytes:
         """Retrieve artifact data."""
@@ -246,7 +263,7 @@ class CoreStorageOperations:
         raise last_exception
 
     async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
-        """Get artifact metadata."""
+        """Get artifact metadata record from session provider."""
         try:
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
@@ -255,7 +272,7 @@ class CoreStorageOperations:
             raise SessionError(f"Session error for {artifact_id}: {e}") from e
         
         if raw is None:
-            raise ProviderError(f"Artifact {artifact_id} not found")
+            raise ArtifactNotFoundError(f"Artifact {artifact_id} not found")
         
         try:
             return json.loads(raw)

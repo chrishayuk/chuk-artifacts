@@ -172,21 +172,24 @@ class ArtifactStore:
         filename: Optional[str] = None,
         summary: Optional[str] = None,
         mime: Optional[str] = None,
+        ttl: Optional[int] = None,
     ) -> bool:
         """
         Update an artifact's content, metadata, filename, summary, or mime type.
         All parameters are optional. At least one must be provided.
         """
-        if not any([data, meta, filename, summary, mime]):
+        if not any([data is not None, meta is not None, filename is not None, 
+                   summary is not None, mime is not None, ttl is not None]):
             raise ValueError("At least one update parameter must be provided.")
 
         return await self._core.update_file(
             artifact_id=artifact_id,
             new_data=data,
+            mime=mime,
+            summary=summary,
             meta=meta,
             filename=filename,
-            summary=summary,
-            mime=mime,
+            ttl=ttl,
         )
 
     async def retrieve(self, artifact_id: str) -> bytes:

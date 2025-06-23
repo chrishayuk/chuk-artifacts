@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 # Core classes
 from .store import ArtifactStore
+from .models import ArtifactEnvelope
 
 # Exception classes
 from .exceptions import (
@@ -41,6 +42,9 @@ __version__ = "1.0.0"
 __all__ = [
     # Main class
     "ArtifactStore",
+    
+    # Models
+    "ArtifactEnvelope",
     
     # Exceptions
     "ArtifactStoreError", 
