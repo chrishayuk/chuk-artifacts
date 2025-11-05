@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from chuk_artifacts.core import CoreStorageOperations, _DEFAULT_TTL
 from chuk_artifacts.exceptions import ArtifactStoreError, ProviderError, SessionError
+from chuk_artifacts.models import ArtifactMetadata
 
 
 @pytest.fixture
@@ -264,16 +265,22 @@ class TestUpdateFile:
         new_data = b"updated content"
 
         # Mock existing record
-        existing_record = {
-            "artifact_id": artifact_id,
-            "key": "test/key",
-            "session_id": "session123",
-            "mime": "text/plain",
-            "summary": "Original summary",
-            "meta": {"original": True},
-            "filename": "original.txt",
-            "ttl": 900,
-        }
+        existing_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Original summary",
+            meta={"original": True},
+            filename="original.txt",
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
 
         # Mock _get_record
         core_operations._get_record = AsyncMock(return_value=existing_record)
@@ -343,7 +350,21 @@ class TestRetrieve:
         test_sha256 = hashlib.sha256(test_data).hexdigest()
 
         # Mock record
-        record = {"key": "test/key", "sha256": test_sha256}
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            sha256=test_sha256,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         core_operations._get_record = AsyncMock(return_value=record)
 
         # Mock storage response
@@ -371,7 +392,20 @@ class TestRetrieve:
         artifact_id = "test123"
         test_data = b"streaming content"
 
-        record = {"key": "test/key"}
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         core_operations._get_record = AsyncMock(return_value=record)
 
         # Mock streaming body
@@ -399,7 +433,21 @@ class TestRetrieve:
         test_data = b"test content"
         wrong_sha256 = "wrong_hash"
 
-        record = {"key": "test/key", "sha256": wrong_sha256}
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            sha256=wrong_sha256,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         core_operations._get_record = AsyncMock(return_value=record)
 
         mock_s3 = AsyncMock()
@@ -429,7 +477,20 @@ class TestRetrieve:
     @pytest.mark.asyncio
     async def test_retrieve_storage_failure(self, core_operations, mock_artifact_store):
         """Test retrieve when storage fails."""
-        record = {"key": "test/key"}
+        record = ArtifactMetadata(
+            artifact_id="test123",
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         core_operations._get_record = AsyncMock(return_value=record)
 
         mock_s3 = AsyncMock()
@@ -530,7 +591,21 @@ class TestGetRecord:
     async def test_get_record_success(self, core_operations, mock_artifact_store):
         """Test successful record retrieval."""
         artifact_id = "test123"
-        test_record = {"artifact_id": artifact_id, "data": "test"}
+        test_record = {
+            "artifact_id": artifact_id,
+            "session_id": "session123",
+            "sandbox_id": "sandbox123",
+            "key": "test/key",
+            "mime": "text/plain",
+            "summary": "Test",
+            "meta": {},
+            "bytes": 100,
+            "sha256": "abc123",
+            "stored_at": "2025-01-01T00:00:00Z",
+            "ttl": 900,
+            "storage_provider": "memory",
+            "session_provider": "memory",
+        }
 
         mock_session = AsyncMock()
         mock_session.get.return_value = json.dumps(test_record)
@@ -542,7 +617,7 @@ class TestGetRecord:
 
         result = await core_operations._get_record(artifact_id)
 
-        assert result == test_record
+        assert result.artifact_id == artifact_id
         mock_session.get.assert_called_once_with(artifact_id)
 
 
@@ -578,10 +653,21 @@ class TestCoreOperationsIntegration:
             artifact_id = await core_operations.store(**sample_artifact_data)
 
         # Setup for retrieve operation
-        stored_record = {
-            "key": test_key,
-            "sha256": hashlib.sha256(sample_artifact_data["data"]).hexdigest(),
-        }
+        stored_record = ArtifactMetadata(
+            artifact_id="abc123def456",
+            key=test_key,
+            session_id="test-session-123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(sample_artifact_data["data"]),
+            sha256=hashlib.sha256(sample_artifact_data["data"]).hexdigest(),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
 
         # Mock get_record for retrieve
         core_operations._get_record = AsyncMock(return_value=stored_record)
@@ -626,26 +712,43 @@ class TestCoreOperationsIntegration:
             stored_id = await core_operations.store(**sample_artifact_data)
 
         # Mock for update
-        existing_record = {
-            "artifact_id": artifact_id,
-            "key": "test/key",
-            "session_id": "session123",
-            "mime": "text/plain",
-            "summary": "Original",
-            "meta": {},
-            "filename": "test.txt",
-            "ttl": 900,
-        }
+        existing_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Original",
+            meta={},
+            filename="test.txt",
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         core_operations._get_record = AsyncMock(return_value=existing_record)
 
         # Update artifact
         await core_operations.update_file(artifact_id, updated_data, summary="Updated")
 
         # Mock for retrieve
-        updated_record = {
-            "key": "test/key",
-            "sha256": hashlib.sha256(updated_data).hexdigest(),
-        }
+        updated_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Updated",
+            meta={},
+            bytes=len(updated_data),
+            sha256=hashlib.sha256(updated_data).hexdigest(),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         core_operations._get_record = AsyncMock(return_value=updated_record)
         mock_s3.get_object.return_value = {"Body": updated_data}
 
@@ -732,7 +835,20 @@ class TestCoreOperationsEdgeCases:
         test_data = b"test content"
 
         # Record without SHA256
-        record = {"key": "test/key"}
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         core_operations._get_record = AsyncMock(return_value=record)
 
         mock_s3 = AsyncMock()

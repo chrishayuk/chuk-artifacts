@@ -7,7 +7,6 @@ Now uses chuk_sessions for session management.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Dict, List, TYPE_CHECKING
 
@@ -15,6 +14,7 @@ if TYPE_CHECKING:
     from .store import ArtifactStore
 
 from .exceptions import ProviderError, SessionError, ArtifactNotFoundError
+from .models import ArtifactMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class MetadataOperations:
     def __init__(self, artifact_store: "ArtifactStore"):
         self.artifact_store = artifact_store
 
-    async def get_metadata(self, artifact_id: str) -> Dict[str, Any]:
+    async def get_metadata(self, artifact_id: str) -> ArtifactMetadata:
         """Get artifact metadata."""
         return await self._get_record(artifact_id)
 
@@ -46,7 +46,7 @@ class MetadataOperations:
             storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
                 await s3.delete_object(
-                    Bucket=self.artifact_store.bucket, Key=record["key"]
+                    Bucket=self.artifact_store.bucket, Key=record.key
                 )
 
             # Delete metadata from session provider
@@ -83,8 +83,8 @@ class MetadataOperations:
                         key = obj["Key"]
                         # Parse the grid key using chuk_sessions
                         parsed = self.artifact_store.parse_grid_key(key)
-                        if parsed and parsed.get("artifact_id"):
-                            artifact_id = parsed["artifact_id"]
+                        if parsed:
+                            artifact_id = parsed.artifact_id
                             try:
                                 record = await self._get_record(artifact_id)
                                 artifacts.append(record)
@@ -133,7 +133,7 @@ class MetadataOperations:
         meta: Dict[str, Any] = None,
         merge: bool = True,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> ArtifactMetadata:
         """Update artifact metadata."""
         try:
             # Get current record
@@ -141,25 +141,23 @@ class MetadataOperations:
 
             # Update fields
             if summary is not None:
-                record["summary"] = summary
+                record.summary = summary
 
             if meta is not None:
-                if merge and "meta" in record:
-                    record["meta"].update(meta)
+                if merge and record.meta:
+                    record.meta.update(meta)
                 else:
-                    record["meta"] = meta
+                    record.meta = meta
 
             # Update any other fields
             for key, value in kwargs.items():
                 if key not in ["summary", "meta"] and value is not None:
-                    record[key] = value
+                    setattr(record, key, value)
 
             # Store updated record using session provider
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
-                await session.setex(
-                    artifact_id, record.get("ttl", 900), json.dumps(record)
-                )
+                await session.setex(artifact_id, record.ttl, record.model_dump_json())
 
             return record
 
@@ -169,21 +167,20 @@ class MetadataOperations:
 
     async def extend_ttl(
         self, artifact_id: str, additional_seconds: int
-    ) -> Dict[str, Any]:
+    ) -> ArtifactMetadata:
         """Extend artifact TTL."""
         try:
             # Get current record
             record = await self._get_record(artifact_id)
 
             # Update TTL
-            current_ttl = record.get("ttl", 900)
-            new_ttl = current_ttl + additional_seconds
-            record["ttl"] = new_ttl
+            new_ttl = record.ttl + additional_seconds
+            record.ttl = new_ttl
 
             # Store updated record with new TTL using session provider
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
-                await session.setex(artifact_id, new_ttl, json.dumps(record))
+                await session.setex(artifact_id, new_ttl, record.model_dump_json())
 
             return record
 
@@ -191,7 +188,7 @@ class MetadataOperations:
             logger.error(f"TTL extension failed for {artifact_id}: {e}")
             raise ProviderError(f"TTL extension failed: {e}") from e
 
-    async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
+    async def _get_record(self, artifact_id: str) -> ArtifactMetadata:
         """Get artifact metadata record from session provider."""
         try:
             session_ctx_mgr = self.artifact_store._session_factory()
@@ -204,6 +201,6 @@ class MetadataOperations:
             raise ArtifactNotFoundError(f"Artifact {artifact_id} not found")
 
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError as e:
+            return ArtifactMetadata.model_validate_json(raw)
+        except Exception as e:
             raise ProviderError(f"Corrupted metadata for {artifact_id}") from e

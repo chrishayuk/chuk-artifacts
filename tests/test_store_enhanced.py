@@ -448,9 +448,9 @@ class TestStoreIntegrationReal:
 
             # Get metadata
             metadata = await store.metadata(artifact_id)
-            assert metadata["mime"] == "text/plain"
-            assert metadata["summary"] == "Integration test artifact"
-            assert metadata["filename"] == "integration_test.txt"
+            assert metadata.mime == "text/plain"
+            assert metadata.summary == "Integration test artifact"
+            assert metadata.filename == "integration_test.txt"
 
             # List artifacts in session
             artifacts = await store.list_by_session(session_id)
@@ -515,8 +515,8 @@ class TestStoreIntegrationReal:
 
             # Test metadata
             metadata = await store.metadata(artifact_id)
-            assert metadata["mime"] == "text/plain"
-            assert metadata["summary"] == "Memory test 0"
+            assert metadata.mime == "text/plain"
+            assert metadata.summary == "Memory test 0"
 
             # Test batch operations with smaller batch
             batch_items = [

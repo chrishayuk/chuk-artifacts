@@ -322,8 +322,8 @@ class TestStoreEdgeCaseCoverage:
 
             # Verify metadata
             metadata = await store.metadata(artifact_id)
-            assert metadata["mime"] == "application/json"
-            assert metadata["filename"] == "test.json"
+            assert metadata.mime == "application/json"
+            assert metadata.filename == "test.json"
         finally:
             await store.close()
 
@@ -367,7 +367,7 @@ class TestStoreEdgeCaseCoverage:
 
             # Verify
             metadata = await store.metadata(artifact_id)
-            assert metadata["mime"] == "application/json"
+            assert metadata.mime == "application/json"
         finally:
             await store.close()
 
@@ -389,7 +389,7 @@ class TestStoreEdgeCaseCoverage:
 
             # Verify
             metadata = await store.metadata(artifact_id)
-            assert metadata["summary"] == "Updated summary"
+            assert metadata.summary == "Updated summary"
         finally:
             await store.close()
 
@@ -411,7 +411,7 @@ class TestStoreEdgeCaseCoverage:
 
             # Verify
             metadata = await store.metadata(artifact_id)
-            assert "updated" in metadata.get("meta", {})
+            assert "updated" in metadata.meta
         finally:
             await store.close()
 
@@ -433,6 +433,6 @@ class TestStoreEdgeCaseCoverage:
 
             # Verify
             metadata = await store.metadata(artifact_id)
-            assert metadata["filename"] == "updated.txt"
+            assert metadata.filename == "updated.txt"
         finally:
             await store.close()

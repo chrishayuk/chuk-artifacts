@@ -6,9 +6,8 @@ Updated to work with chuk_sessions integration.
 """
 
 from __future__ import annotations
-import json
 import logging
-from typing import Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .store import ArtifactStore
@@ -19,6 +18,7 @@ from .exceptions import (
     SessionError,
     ArtifactStoreError,
 )
+from .models import ArtifactMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class BaseOperations:
         if self._artifact_store._closed:
             raise ArtifactStoreError("Store has been closed")
 
-    async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
+    async def _get_record(self, artifact_id: str) -> ArtifactMetadata:
         """
         Retrieve artifact metadata from session provider.
 
@@ -83,8 +83,8 @@ class BaseOperations:
             raise ArtifactNotFoundError(f"Artifact {artifact_id} not found or expired")
 
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError as e:
+            return ArtifactMetadata.model_validate_json(raw)
+        except Exception as e:
             logger.error(f"Corrupted metadata for artifact {artifact_id}: {e}")
             raise ArtifactCorruptedError(
                 f"Corrupted metadata for artifact {artifact_id}"

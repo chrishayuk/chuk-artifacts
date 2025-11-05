@@ -27,9 +27,9 @@ from chuk_artifacts.config import configure_memory  # noqa: E402
 from chuk_artifacts.exceptions import ArtifactStoreError  # noqa: E402
 
 try:
-    import requests
+    import httpx
 except ImportError:
-    print("`requests` is required for the demo (pip install requests)", file=sys.stderr)
+    print("`httpx` is required for the demo (pip install httpx)", file=sys.stderr)
     sys.exit(1)
 
 
@@ -104,11 +104,11 @@ async def run_demo() -> None:
     assert updated_back == updated_txt
 
     updated_meta = await store.metadata(aid_txt)
-    assert updated_meta["mime"] == "text/markdown"
-    assert updated_meta["summary"] == "Updated text file"
-    assert updated_meta["meta"]["updated"] is True
-    assert updated_meta["filename"] == "updated_demo.md"
-    assert updated_meta["bytes"] == len(updated_txt)
+    assert updated_meta.mime == "text/markdown"
+    assert updated_meta.summary == "Updated text file"
+    assert updated_meta.meta["updated"] is True
+    assert updated_meta.filename == "updated_demo.md"
+    assert updated_meta.bytes == len(updated_txt)
 
     print("🔄  Artifact update verified")
 
@@ -125,26 +125,27 @@ async def run_demo() -> None:
     assert grid_from(url_medium) == store.generate_artifact_key(sess, aid_png)
 
     if backend == "s3":
-        for lab, url in (("short", url_short), ("medium", url_medium)):
-            r = requests.get(url, timeout=5)
-            r.raise_for_status()
-            print(f"🌐  {lab} GET → {r.status_code}, {len(r.content)} bytes")
+        async with httpx.AsyncClient() as client:
+            for lab, url in (("short", url_short), ("medium", url_medium)):
+                r = await client.get(url, timeout=5.0)
+                r.raise_for_status()
+                print(f"🌐  {lab} GET → {r.status_code}, {len(r.content)} bytes")
 
     # ------------------------------------------------------------------
     # 7. copy & move within same session
     # ------------------------------------------------------------------
     aid_copy = await store.copy_file(aid_txt, new_filename="demo_copy.txt")
     meta_copy = await store.metadata(aid_copy)
-    assert meta_copy["meta"]["copied_from"] == aid_txt
+    assert meta_copy.meta["copied_from"] == aid_txt
     moved = await store.move_file(aid_png, new_filename="renamed.png")
-    assert moved["filename"] == "renamed.png"
+    assert moved.filename == "renamed.png"
     print("📝  Copy & move safeguards OK")
 
     # ------------------------------------------------------------------
     # 8. list / exists
     # ------------------------------------------------------------------
     listing = await store.list_by_session(sess)
-    ids = {x["artifact_id"] for x in listing}
+    ids = {x.artifact_id for x in listing}
     assert {aid_txt, aid_copy, aid_png} <= ids
     for aid in (aid_txt, aid_copy, aid_png):
         assert await store.exists(aid)

@@ -249,44 +249,44 @@ async def demonstrate_artifact_store_integration():
         meta3 = await store.metadata(artifact3_id)
 
         print("   • Alice's artifacts (same session via chuk_sessions):")
-        print(f"     - Artifact 1 key: {meta1['key']}")
-        print(f"     - Artifact 2 key: {meta2['key']}")
-        print(f"     - Session ID: {meta1['session_id']}")
+        print(f"     - Artifact 1 key: {meta1.key}")
+        print(f"     - Artifact 2 key: {meta2.key}")
+        print(f"     - Session ID: {meta1.session_id}")
 
         print("\n   • Bob's artifacts (different session via chuk_sessions):")
-        print(f"     - Artifact 3 key: {meta3['key']}")
-        print(f"     - Session ID: {meta3['session_id']}")
+        print(f"     - Artifact 3 key: {meta3.key}")
+        print(f"     - Session ID: {meta3.session_id}")
 
         # Demonstrate grid key parsing (ArtifactStore functionality)
-        parsed1 = store.parse_grid_key(meta1["key"])
-        parsed3 = store.parse_grid_key(meta3["key"])
+        parsed1 = store.parse_grid_key(meta1.key)
+        parsed3 = store.parse_grid_key(meta3.key)
 
         print("\n   • Parsed Alice's key:")
-        print(f"     - Sandbox: {parsed1['sandbox_id']}")
-        print(f"     - Session: {parsed1['session_id']}")
-        print(f"     - Artifact: {parsed1['artifact_id']}")
+        print(f"     - Sandbox: {parsed1.sandbox_id}")
+        print(f"     - Session: {parsed1.session_id}")
+        print(f"     - Artifact: {parsed1.artifact_id}")
 
         print("\n   • Parsed Bob's key:")
-        print(f"     - Sandbox: {parsed3['sandbox_id']}")
-        print(f"     - Session: {parsed3['session_id']}")
-        print(f"     - Artifact: {parsed3['artifact_id']}")
+        print(f"     - Sandbox: {parsed3.sandbox_id}")
+        print(f"     - Session: {parsed3.session_id}")
+        print(f"     - Artifact: {parsed3.artifact_id}")
 
         # List artifacts by session
         print("\n📋 Listing artifacts by session...")
 
-        alice_session_id = meta1["session_id"]
-        bob_session_id = meta3["session_id"]
+        alice_session_id = meta1.session_id
+        bob_session_id = meta3.session_id
 
         alice_artifacts = await store.list_by_session(alice_session_id)
         bob_artifacts = await store.list_by_session(bob_session_id)
 
         print(f"   • Alice's session has {len(alice_artifacts)} artifacts")
         for artifact in alice_artifacts:
-            print(f"     - {artifact['filename']}: {artifact['summary']}")
+            print(f"     - {artifact.filename}: {artifact.summary}")
 
         print(f"   • Bob's session has {len(bob_artifacts)} artifacts")
         for artifact in bob_artifacts:
-            print(f"     - {artifact['filename']}: {artifact['summary']}")
+            print(f"     - {artifact.filename}: {artifact.summary}")
 
         return store, {
             "alice_artifacts": [artifact1_id, artifact2_id],
@@ -373,9 +373,9 @@ async def demonstrate_real_world_usage():
         image_meta = await store.metadata(image_id)
 
         print(
-            f"   • Both files in same session: {pdf_meta['session_id'] == image_meta['session_id']}"
+            f"   • Both files in same session: {pdf_meta.session_id == image_meta.session_id}"
         )
-        print(f"   • Grid organization: {pdf_meta['key']}")
+        print(f"   • Grid organization: {pdf_meta.key}")
 
 
 async def demonstrate_api_comparison():
@@ -415,7 +415,7 @@ async def demonstrate_api_comparison():
 
         # Show the full integration
         meta = await store.metadata(artifact_id)
-        print(f"   • Artifact stored in grid path: {meta['key']}")
+        print(f"   • Artifact stored in grid path: {meta.key}")
         print("   • Session automatically managed by chuk_sessions")
 
 

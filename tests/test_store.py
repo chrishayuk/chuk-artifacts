@@ -470,9 +470,13 @@ class TestGridOperations:
 
         # Should parse the grid key correctly or return None
         if result:  # parse might return None for invalid keys
-            # Check that some expected fields are present
-            assert isinstance(result, dict)
-            # The exact structure may vary, so just check it's a dict
+            # Check that it's a GridKeyComponents model
+            from chuk_artifacts.models import GridKeyComponents
+
+            assert isinstance(result, GridKeyComponents)
+            assert result.sandbox_id == store.sandbox_id
+            assert result.session_id == "session-123"
+            assert result.artifact_id == "artifact-456"
 
     def test_get_session_prefix_pattern(self, store):
         """Test getting session prefix pattern."""
@@ -501,7 +505,12 @@ class TestGridOperations:
             # Test parse function with a valid key
             parsed = parse(key)
             if parsed:  # parse might return None for invalid formats
-                assert parsed.get("sandbox_id") == "test-sandbox"
+                from chuk_artifacts.models import GridKeyComponents
+
+                assert isinstance(parsed, GridKeyComponents)
+                assert parsed.sandbox_id == "test-sandbox"
+                assert parsed.session_id == "session-123"
+                assert parsed.artifact_id == "artifact-456"
         except ImportError:
             # If grid module is not available, skip this test
             pytest.skip("chuk_artifacts.grid module not available")
@@ -627,14 +636,25 @@ class TestFileOperations:
     @pytest.mark.asyncio
     async def test_copy_file_same_session(self, store):
         """Test copying file within same session."""
-        # Setup mocks
-        original_meta = {
-            "session_id": "session-123",
-            "mime": "text/plain",
-            "summary": "Original file",
-            "filename": "original.txt",
-            "meta": {"key": "value"},
-        }
+        # Setup mocks with ArtifactMetadata model
+        from chuk_artifacts.models import ArtifactMetadata
+
+        original_meta = ArtifactMetadata(
+            artifact_id="artifact-123",
+            session_id="session-123",
+            sandbox_id="test-sandbox",
+            key="grid/test-sandbox/session-123/artifact-123",
+            mime="text/plain",
+            summary="Original file",
+            filename="original.txt",
+            bytes=12,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+            meta={"key": "value"},
+        )
 
         with patch.object(store, "metadata") as mock_metadata, patch.object(
             store, "retrieve"
@@ -677,11 +697,22 @@ class TestFileOperations:
     @pytest.mark.asyncio
     async def test_copy_file_cross_session_blocked(self, store):
         """Test that cross-session copying is blocked."""
-        original_meta = {
-            "session_id": "session-123",
-            "mime": "text/plain",
-            "summary": "Original file",
-        }
+        from chuk_artifacts.models import ArtifactMetadata
+
+        original_meta = ArtifactMetadata(
+            artifact_id="artifact-123",
+            session_id="session-123",
+            sandbox_id="test-sandbox",
+            key="grid/test-sandbox/session-123/artifact-123",
+            mime="text/plain",
+            summary="Original file",
+            filename="file.txt",
+            bytes=10,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
 
         with patch.object(store, "metadata") as mock_metadata:
             mock_metadata.return_value = original_meta
@@ -694,14 +725,26 @@ class TestFileOperations:
     @pytest.mark.asyncio
     async def test_move_file_same_session(self, store):
         """Test moving file within same session."""
-        original_record = {
-            "session_id": "session-123",
-            "filename": "original.txt",
-            "meta": {"key": "value"},
-        }
+        from chuk_artifacts.models import ArtifactMetadata
+
+        original_record = ArtifactMetadata(
+            artifact_id="artifact-123",
+            session_id="session-123",
+            sandbox_id="test-sandbox",
+            key="grid/test-sandbox/session-123/artifact-123",
+            mime="text/plain",
+            summary="Original file",
+            filename="original.txt",
+            bytes=10,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+            meta={"key": "value"},
+        )
 
         with patch.object(store, "metadata") as mock_metadata:
-            mock_metadata.return_value = original_record.copy()
+            mock_metadata.return_value = original_record
 
             result = await store.move_file(
                 "artifact-123", new_filename="moved.txt", new_meta={"moved": True}
@@ -715,7 +758,22 @@ class TestFileOperations:
     @pytest.mark.asyncio
     async def test_move_file_cross_session_blocked(self, store):
         """Test that cross-session moving is blocked."""
-        original_record = {"session_id": "session-123", "filename": "original.txt"}
+        from chuk_artifacts.models import ArtifactMetadata
+
+        original_record = ArtifactMetadata(
+            artifact_id="artifact-123",
+            session_id="session-123",
+            sandbox_id="test-sandbox",
+            key="grid/test-sandbox/session-123/artifact-123",
+            mime="text/plain",
+            summary="Original file",
+            filename="original.txt",
+            bytes=10,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
 
         with patch.object(store, "metadata") as mock_metadata:
             mock_metadata.return_value = original_record
@@ -1068,13 +1126,23 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_copy_file_with_missing_filename(self, store):
         """Test copying file when original has no filename."""
-        original_meta = {
-            "session_id": "session-123",
-            "mime": "application/octet-stream",
-            "summary": "Binary data",
-            "filename": None,
-            "meta": {},
-        }
+        from chuk_artifacts.models import ArtifactMetadata
+
+        original_meta = ArtifactMetadata(
+            artifact_id="artifact-123",
+            session_id="session-123",
+            sandbox_id="test-sandbox",
+            key="grid/test-sandbox/session-123/artifact-123",
+            mime="application/octet-stream",
+            summary="Binary data",
+            filename=None,
+            bytes=10,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+            meta={},
+        )
 
         with patch.object(store, "metadata") as mock_metadata, patch.object(
             store, "retrieve"

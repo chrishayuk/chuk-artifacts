@@ -153,9 +153,24 @@ class TestGetRecord:
     @pytest.mark.asyncio
     async def test_get_record_success(self, base_operations, mock_artifact_store):
         """Test successful _get_record operation."""
-        # Mock successful session retrieval
+        # Mock successful session retrieval with valid ArtifactMetadata structure
         mock_session = AsyncMock()
-        test_record = {"artifact_id": "test123", "data": "test_data"}
+        test_record = {
+            "artifact_id": "test123",
+            "session_id": "session456",
+            "sandbox_id": "sandbox789",
+            "key": "grid/sandbox789/session456/test123",
+            "mime": "text/plain",
+            "summary": "Test artifact",
+            "meta": {},
+            "filename": "test.txt",
+            "bytes": 100,
+            "sha256": "abc123",
+            "stored_at": "2025-01-01T00:00:00Z",
+            "ttl": 900,
+            "storage_provider": "memory",
+            "session_provider": "memory",
+        }
         mock_session.get.return_value = json.dumps(test_record)
 
         mock_session_ctx = AsyncMock()
@@ -167,7 +182,9 @@ class TestGetRecord:
         # Test the method
         result = await base_operations._get_record("test123")
 
-        assert result == test_record
+        # Result should be an ArtifactMetadata model
+        assert result.artifact_id == "test123"
+        assert result.session_id == "session456"
         mock_session.get.assert_called_once_with("test123")
 
     @pytest.mark.asyncio
@@ -209,8 +226,8 @@ class TestGetRecord:
             await base_operations._get_record("corrupted123")
 
         assert "Corrupted metadata for artifact corrupted123" in str(exc_info.value)
+        # With Pydantic, the cause is wrapped differently but still indicates corruption
         assert exc_info.value.__cause__ is not None
-        assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
 
     @pytest.mark.asyncio
     async def test_get_record_session_error(self, base_operations, mock_artifact_store):
@@ -253,17 +270,29 @@ class TestGetRecord:
 
     @pytest.mark.asyncio
     async def test_get_record_complex_data(self, base_operations, mock_artifact_store):
-        """Test _get_record with complex JSON data."""
-        # Test with complex nested data structure
+        """Test _get_record with complex JSON data and unicode."""
+        # Test with complex nested data structure in meta field
         test_record = {
             "artifact_id": "complex123",
-            "metadata": {
+            "session_id": "session456",
+            "sandbox_id": "sandbox789",
+            "key": "grid/sandbox789/session456/complex123",
+            "mime": "application/json",
+            "summary": "Complex test data",
+            "meta": {
                 "nested": {"deep": "value"},
                 "list": [1, 2, 3],
                 "boolean": True,
                 "null_value": None,
+                "unicode": "测试数据",
             },
-            "unicode": "测试数据",
+            "filename": "complex.json",
+            "bytes": 500,
+            "sha256": "def456",
+            "stored_at": "2025-01-01T00:00:00Z",
+            "ttl": 900,
+            "storage_provider": "memory",
+            "session_provider": "memory",
         }
 
         mock_session = AsyncMock()
@@ -277,10 +306,11 @@ class TestGetRecord:
 
         result = await base_operations._get_record("complex123")
 
-        assert result == test_record
-        assert result["metadata"]["nested"]["deep"] == "value"
-        assert result["metadata"]["list"] == [1, 2, 3]
-        assert result["unicode"] == "测试数据"
+        # Verify complex data is preserved in the model
+        assert result.artifact_id == "complex123"
+        assert result.meta["nested"]["deep"] == "value"
+        assert result.meta["list"] == [1, 2, 3]
+        assert result.meta["unicode"] == "测试数据"
 
 
 class TestBaseOperationsInheritance:
@@ -385,7 +415,7 @@ class TestEdgeCases:
     async def test_get_record_valid_empty_dict(
         self, base_operations, mock_artifact_store
     ):
-        """Test _get_record with valid empty dictionary."""
+        """Test _get_record with empty dict - should fail validation."""
         mock_session = AsyncMock()
         mock_session.get.return_value = "{}"
 
@@ -395,9 +425,9 @@ class TestEdgeCases:
 
         mock_artifact_store._session_factory.return_value = mock_session_ctx
 
-        result = await base_operations._get_record("test123")
-
-        assert result == {}
+        # Empty dict should fail Pydantic validation
+        with pytest.raises(ArtifactCorruptedError):
+            await base_operations._get_record("test123")
 
     def test_properties_with_none_artifact_store(self):
         """Test that properties raise appropriate errors with None store."""
@@ -442,6 +472,18 @@ class TestIntegration:
         test_record = {
             "artifact_id": "workflow123",
             "session_id": "session456",
+            "sandbox_id": "sandbox789",
+            "key": "grid/sandbox789/session456/workflow123",
+            "mime": "text/plain",
+            "summary": "Test workflow",
+            "meta": {},
+            "filename": "test.txt",
+            "bytes": 100,
+            "sha256": "abc123",
+            "stored_at": "2025-01-01T00:00:00Z",
+            "ttl": 900,
+            "storage_provider": "memory",
+            "session_provider": "memory",
             "data": "test_data",
         }
 
@@ -457,6 +499,7 @@ class TestIntegration:
         # Test successful retrieval
         result = await base_ops._get_record("workflow123")
 
-        assert result["artifact_id"] == "workflow123"
-        assert result["session_id"] == "session456"
-        assert result["data"] == "test_data"
+        assert result.artifact_id == "workflow123"
+        assert result.session_id == "session456"
+        # Custom field allowed by extra="allow" config
+        assert result.data == "test_data"

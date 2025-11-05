@@ -11,7 +11,6 @@ import uuid
 import hashlib
 import time
 import asyncio
-import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, TYPE_CHECKING
@@ -25,6 +24,7 @@ from .exceptions import (
     SessionError,
     ArtifactNotFoundError,
 )
+from .models import ArtifactMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -62,28 +62,28 @@ class CoreStorageOperations:
             # Store in object storage
             await self._store_with_retry(data, key, mime, filename, session_id)
 
-            # Build metadata record
-            record = {
-                "artifact_id": artifact_id,
-                "session_id": session_id,
-                "sandbox_id": self.artifact_store.sandbox_id,
-                "key": key,
-                "mime": mime,
-                "summary": summary,
-                "meta": meta or {},
-                "filename": filename,
-                "bytes": len(data),
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "stored_at": datetime.utcnow().isoformat() + "Z",
-                "ttl": ttl,
-                "storage_provider": self.artifact_store._storage_provider_name,
-                "session_provider": self.artifact_store._session_provider_name,
-            }
+            # Build metadata record using Pydantic model
+            record = ArtifactMetadata(
+                artifact_id=artifact_id,
+                session_id=session_id,
+                sandbox_id=self.artifact_store.sandbox_id,
+                key=key,
+                mime=mime,
+                summary=summary,
+                meta=meta or {},
+                filename=filename,
+                bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                stored_at=datetime.utcnow().isoformat() + "Z",
+                ttl=ttl,
+                storage_provider=self.artifact_store._storage_provider_name,
+                session_provider=self.artifact_store._session_provider_name,
+            )
 
             # Store metadata
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
-                await session.setex(artifact_id, ttl, json.dumps(record))
+                await session.setex(artifact_id, ttl, record.model_dump_json())
 
             duration_ms = int((time.time() - start_time) * 1000)
             logger.info(
@@ -159,8 +159,8 @@ class CoreStorageOperations:
 
         try:
             record = await self._get_record(artifact_id)
-            key = record["key"]
-            session_id = record["session_id"]
+            key = record.key
+            session_id = record.session_id
 
             # Update data if provided
             if new_data is not None:
@@ -168,34 +168,34 @@ class CoreStorageOperations:
                 await self._store_with_retry(
                     new_data,
                     key,
-                    mime or record["mime"],
-                    filename or record.get("filename"),
+                    mime or record.mime,
+                    filename or record.filename,
                     session_id,
                 )
 
                 # Update size and hash in metadata
-                record["bytes"] = len(new_data)
-                record["sha256"] = hashlib.sha256(new_data).hexdigest()
+                record.bytes = len(new_data)
+                record.sha256 = hashlib.sha256(new_data).hexdigest()
 
             # Update metadata fields
             if mime is not None:
-                record["mime"] = mime
+                record.mime = mime
             if summary is not None:
-                record["summary"] = summary
+                record.summary = summary
             if filename is not None:
-                record["filename"] = filename
+                record.filename = filename
             if meta is not None:
-                record["meta"] = meta
+                record.meta = meta
             if ttl is not None:
-                record["ttl"] = ttl
+                record.ttl = ttl
 
             # Add update timestamp
-            record["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            record.updated_at = datetime.utcnow().isoformat() + "Z"
 
             # Store updated metadata
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
-                await session.setex(artifact_id, record["ttl"], json.dumps(record))
+                await session.setex(artifact_id, record.ttl, record.model_dump_json())
 
             logger.info(
                 "Artifact updated successfully", extra={"artifact_id": artifact_id}
@@ -217,7 +217,7 @@ class CoreStorageOperations:
             storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
                 response = await s3.get_object(
-                    Bucket=self.artifact_store.bucket, Key=record["key"]
+                    Bucket=self.artifact_store.bucket, Key=record.key
                 )
 
                 # Handle different response formats
@@ -229,11 +229,11 @@ class CoreStorageOperations:
                     data = bytes(response["Body"])
 
                 # Verify integrity
-                if "sha256" in record and record["sha256"]:
+                if record.sha256:
                     computed = hashlib.sha256(data).hexdigest()
-                    if computed != record["sha256"]:
+                    if computed != record.sha256:
                         raise ProviderError(
-                            f"SHA256 mismatch: {record['sha256']} != {computed}"
+                            f"SHA256 mismatch: {record.sha256} != {computed}"
                         )
 
                 return data
@@ -273,7 +273,7 @@ class CoreStorageOperations:
 
         raise last_exception
 
-    async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
+    async def _get_record(self, artifact_id: str) -> ArtifactMetadata:
         """Get artifact metadata record from session provider."""
         try:
             session_ctx_mgr = self.artifact_store._session_factory()
@@ -286,6 +286,6 @@ class CoreStorageOperations:
             raise ArtifactNotFoundError(f"Artifact {artifact_id} not found")
 
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError as e:
+            return ArtifactMetadata.model_validate_json(raw)
+        except Exception as e:
             raise ProviderError(f"Corrupted metadata for {artifact_id}") from e

@@ -106,11 +106,11 @@ async def secure_session_demo():
 
         print(f"📁 Alice's session ({len(alice_files)} files):")
         for file_meta in alice_files:
-            print(f"   - {file_meta.get('filename', 'unnamed')}")
+            print(f"   - {file_meta.filename or 'unnamed'}")
 
         print(f"📁 Bob's session ({len(bob_files)} files):")
         for file_meta in bob_files:
-            print(f"   - {file_meta.get('filename', 'unnamed')}")
+            print(f"   - {file_meta.filename or 'unnamed'}")
 
         # =====================================================================
         # 3. Test blocked cross-session operations
@@ -210,18 +210,14 @@ async def secure_session_demo():
 
         print(f"🔒 Alice's secure session ({len(alice_final)} files):")
         for file_meta in alice_final:
-            confidential = (
-                "🔐" if file_meta.get("meta", {}).get("confidential") else "📄"
-            )
+            confidential = "🔐" if file_meta.meta.get("confidential") else "📄"
             print(
-                f"   {confidential} {file_meta.get('filename', 'unnamed')} ({file_meta.get('bytes', 0)} bytes)"
+                f"   {confidential} {file_meta.filename or 'unnamed'} ({file_meta.bytes} bytes)"
             )
 
         print(f"🔒 Bob's secure session ({len(bob_final)} files):")
         for file_meta in bob_final:
-            print(
-                f"   📄 {file_meta.get('filename', 'unnamed')} ({file_meta.get('bytes', 0)} bytes)"
-            )
+            print(f"   📄 {file_meta.filename or 'unnamed'} ({file_meta.bytes} bytes)")
 
         print("\n🎉 Secure session operations completed successfully!")
         print("🔒 All cross-session operations properly blocked!")

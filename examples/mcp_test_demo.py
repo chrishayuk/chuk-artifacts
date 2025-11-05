@@ -146,9 +146,7 @@ This document outlines the requirements for our new web application.
         all_files = await store.list_by_session(session_id)
         print(f"📁 Session contains {len(all_files)} files:")
         for file_meta in all_files:
-            print(
-                f"   - {file_meta.get('filename', 'unnamed')} ({file_meta.get('bytes', 0)} bytes)"
-            )
+            print(f"   - {file_meta.filename or 'unnamed'} ({file_meta.bytes} bytes)")
 
         # List files by directory
         config_files = await store.get_directory_contents(session_id, "config/")
@@ -280,8 +278,8 @@ Created via MCP session operations.
         total_bytes = 0
 
         for file_meta in final_files:
-            filename = file_meta.get("filename", "")
-            file_bytes = file_meta.get("bytes", 0)
+            filename = file_meta.filename or ""
+            file_bytes = file_meta.bytes
             total_bytes += file_bytes
 
             if "/" in filename:
@@ -609,7 +607,7 @@ body {
 
         for role, session_id in sessions.items():
             files = await store.list_by_session(session_id)
-            total_size = sum(f.get("bytes", 0) for f in files)
+            total_size = sum(f.bytes for f in files)
 
             print(f"👤 {role.title()} ({session_id}):")
             print(f"   Files: {len(files)}")
@@ -618,7 +616,7 @@ body {
             # Show file types
             file_types = {}
             for file_meta in files:
-                mime = file_meta.get("mime", "unknown")
+                mime = file_meta.mime
                 file_types[mime] = file_types.get(mime, 0) + 1
 
             for mime, count in file_types.items():
@@ -758,7 +756,7 @@ async def mcp_performance_demo():
         print("\n📊 Performance Summary:")
 
         final_files = await store.list_by_session(session_id)
-        total_bytes = sum(f.get("bytes", 0) for f in final_files)
+        total_bytes = sum(f.bytes for f in final_files)
 
         print(f"   Total files: {len(final_files)}")
         print(f"   Total data: {total_bytes:,} bytes ({total_bytes/1024:.1f} KB)")

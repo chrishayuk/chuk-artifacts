@@ -10,7 +10,6 @@ from __future__ import annotations
 import uuid
 import time
 import logging
-import json
 from datetime import datetime
 from typing import Any, Dict, TYPE_CHECKING
 
@@ -24,6 +23,7 @@ from .exceptions import (
     ProviderError,
     SessionError,
 )
+from .models import ArtifactMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class PresignedURLOperations:
             async with storage_ctx_mgr as s3:
                 url = await s3.generate_presigned_url(
                     "get_object",
-                    Params={"Bucket": self.artifact_store.bucket, "Key": record["key"]},
+                    Params={"Bucket": self.artifact_store.bucket, "Key": record.key},
                     ExpiresIn=expires,
                 )
 
@@ -216,29 +216,29 @@ class PresignedURLOperations:
                     logger.warning(f"Artifact {artifact_id} not found in storage")
                     return False
 
-            # Build metadata record
-            record = {
-                "artifact_id": artifact_id,
-                "session_id": session_id,
-                "sandbox_id": self.artifact_store.sandbox_id,
-                "key": key,
-                "mime": mime,
-                "summary": summary,
-                "meta": meta or {},
-                "filename": filename,
-                "bytes": file_size,
-                "sha256": None,  # We don't have the hash since we didn't upload it directly
-                "stored_at": datetime.utcnow().isoformat() + "Z",
-                "ttl": ttl,
-                "storage_provider": self.artifact_store._storage_provider_name,
-                "session_provider": self.artifact_store._session_provider_name,
-                "uploaded_via_presigned": True,  # Flag to indicate upload method
-            }
+            # Build metadata record using Pydantic model
+            record = ArtifactMetadata(
+                artifact_id=artifact_id,
+                session_id=session_id,
+                sandbox_id=self.artifact_store.sandbox_id,
+                key=key,
+                mime=mime,
+                summary=summary,
+                meta=meta or {},
+                filename=filename,
+                bytes=file_size,
+                sha256=None,  # We don't have the hash since we didn't upload it directly
+                stored_at=datetime.utcnow().isoformat() + "Z",
+                ttl=ttl,
+                storage_provider=self.artifact_store._storage_provider_name,
+                session_provider=self.artifact_store._session_provider_name,
+                uploaded_via_presigned=True,  # Flag to indicate upload method
+            )
 
             # Cache metadata using session provider
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
-                await session.setex(artifact_id, ttl, json.dumps(record))
+                await session.setex(artifact_id, ttl, record.model_dump_json())
 
             duration_ms = int((time.time() - start_time) * 1000)
             logger.info(
@@ -299,7 +299,7 @@ class PresignedURLOperations:
 
         return upload_url, artifact_id
 
-    async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
+    async def _get_record(self, artifact_id: str) -> ArtifactMetadata:
         """Get artifact metadata record."""
         try:
             session_ctx_mgr = self.artifact_store._session_factory()
@@ -312,6 +312,6 @@ class PresignedURLOperations:
             raise ArtifactNotFoundError(f"Artifact {artifact_id} not found")
 
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError as e:
+            return ArtifactMetadata.model_validate_json(raw)
+        except Exception as e:
             raise ProviderError(f"Corrupted metadata for {artifact_id}") from e

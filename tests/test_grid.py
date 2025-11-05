@@ -211,7 +211,7 @@ class TestParseStrict:
             "artifact_id": "artifact1",
             "subpath": None,
         }
-        assert result == expected
+        assert result.model_dump() == expected
 
     def test_parse_valid_with_subpath(self):
         """Test parsing valid key with subpath."""
@@ -224,7 +224,7 @@ class TestParseStrict:
             "artifact_id": "artifact1",
             "subpath": "sub/path",
         }
-        assert result == expected
+        assert result.model_dump() == expected
 
     def test_parse_valid_complex_subpath(self):
         """Test parsing with complex subpath."""
@@ -237,7 +237,7 @@ class TestParseStrict:
             "artifact_id": "artifact1",
             "subpath": "deep/nested/path",
         }
-        assert result == expected
+        assert result.model_dump() == expected
 
     def test_parse_invalid_empty_components(self):
         """Test parsing with empty components (now invalid)."""
@@ -297,7 +297,7 @@ class TestParseStrict:
 
         # Should still parse successfully, subpath becomes None
         assert result is not None
-        assert result["subpath"] is None
+        assert result.subpath is None
 
 
 class TestHelperFunctions:
@@ -340,7 +340,7 @@ class TestHelperFunctions:
             "artifact_id": "artifact1",
             "subpath": None,
         }
-        assert result == expected
+        assert result.model_dump() == expected
 
     def test_validate_grid_key_invalid(self):
         """Test validate_grid_key with invalid key."""
@@ -374,10 +374,10 @@ class TestRoundTripOperations:
 
             # Verify round-trip
             assert parsed is not None
-            assert parsed["sandbox_id"] == sandbox_id
-            assert parsed["session_id"] == session_id
-            assert parsed["artifact_id"] == artifact_id
-            assert parsed["subpath"] is None
+            assert parsed.sandbox_id == sandbox_id
+            assert parsed.session_id == session_id
+            assert parsed.artifact_id == artifact_id
+            assert parsed.subpath is None
 
     def test_prefix_and_key_compatibility(self):
         """Test that prefixes and keys are compatible."""
@@ -394,9 +394,7 @@ class TestRoundTripOperations:
 
         # Parse and regenerate should match
         parsed = parse(key)
-        regenerated_prefix = canonical_prefix(
-            parsed["sandbox_id"], parsed["session_id"]
-        )
+        regenerated_prefix = canonical_prefix(parsed.sandbox_id, parsed.session_id)
         assert regenerated_prefix == prefix
 
 
@@ -482,10 +480,10 @@ class TestDocumentationExamples:
 
         # Parse the key
         parsed = parse(key)
-        assert parsed["sandbox_id"] == "production"
-        assert parsed["session_id"] == "user-session-123"
-        assert parsed["artifact_id"] == "document-456"
-        assert parsed["subpath"] is None
+        assert parsed.sandbox_id == "production"
+        assert parsed.session_id == "user-session-123"
+        assert parsed.artifact_id == "document-456"
+        assert parsed.subpath is None
 
     def test_subpath_examples(self):
         """Test subpath handling examples."""
@@ -493,10 +491,10 @@ class TestDocumentationExamples:
         key_with_subpath = "grid/sandbox/session/artifact/folder/file.txt"
         parsed = parse(key_with_subpath)
 
-        assert parsed["sandbox_id"] == "sandbox"
-        assert parsed["session_id"] == "session"
-        assert parsed["artifact_id"] == "artifact"
-        assert parsed["subpath"] == "folder/file.txt"
+        assert parsed.sandbox_id == "sandbox"
+        assert parsed.session_id == "session"
+        assert parsed.artifact_id == "artifact"
+        assert parsed.subpath == "folder/file.txt"
 
     def test_validation_examples(self):
         """Test validation examples."""

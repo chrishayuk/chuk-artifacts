@@ -20,6 +20,7 @@ from chuk_artifacts.exceptions import (
     ProviderError,
     SessionError,
 )
+from chuk_artifacts.models import ArtifactMetadata
 
 
 @pytest.fixture
@@ -75,7 +76,21 @@ class TestPresign:
         test_url = "https://example.com/presigned-url"
 
         # Mock record retrieval
-        test_record = {"key": "test/key/path"}
+        test_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key/path",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         presigned_operations._get_record = AsyncMock(return_value=test_record)
 
         # Mock S3 operations
@@ -110,7 +125,21 @@ class TestPresign:
         artifact_id = "test123"
         custom_expires = 7200
 
-        test_record = {"key": "test/key/path"}
+        test_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key/path",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         presigned_operations._get_record = AsyncMock(return_value=test_record)
 
         mock_s3 = AsyncMock()
@@ -156,7 +185,21 @@ class TestPresign:
         self, presigned_operations, mock_artifact_store
     ):
         """Test presign with OAuth credential error."""
-        test_record = {"key": "test/key/path"}
+        test_record = ArtifactMetadata(
+            artifact_id="test123",
+            key="test/key/path",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         presigned_operations._get_record = AsyncMock(return_value=test_record)
 
         mock_s3 = AsyncMock()
@@ -180,7 +223,21 @@ class TestPresign:
         self, presigned_operations, mock_artifact_store
     ):
         """Test presign with general provider error."""
-        test_record = {"key": "test/key/path"}
+        test_record = ArtifactMetadata(
+            artifact_id="test123",
+            key="test/key/path",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         presigned_operations._get_record = AsyncMock(return_value=test_record)
 
         mock_s3 = AsyncMock()
@@ -620,11 +677,25 @@ class TestGetRecord:
     async def test_get_record_success(self, presigned_operations, mock_artifact_store):
         """Test successful record retrieval."""
         artifact_id = "test123"
-        test_record = {"artifact_id": artifact_id, "key": "test/key"}
+        test_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
 
         # Mock session operations
         mock_session = AsyncMock()
-        mock_session.get.return_value = json.dumps(test_record)
+        mock_session.get.return_value = test_record.model_dump_json()
 
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
@@ -758,14 +829,24 @@ class TestPresignedOperationsIntegration:
         artifact_id = "download-test"
 
         # Mock existing artifact record
-        test_record = {
-            "artifact_id": artifact_id,
-            "key": f"grid/test-sandbox/session/{artifact_id}",
-            "mime": "image/jpeg",
-        }
+        test_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key=f"grid/test-sandbox/session/{artifact_id}",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="image/jpeg",
+            summary="Download test",
+            meta={},
+            bytes=1024,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
 
         mock_session = AsyncMock()
-        mock_session.get.return_value = json.dumps(test_record)
+        mock_session.get.return_value = test_record.model_dump_json()
 
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
@@ -813,7 +894,21 @@ class TestLogging:
         """Test that presign operations log appropriately."""
         artifact_id = "log-test"
 
-        test_record = {"key": "test/key"}
+        test_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         presigned_operations._get_record = AsyncMock(return_value=test_record)
 
         mock_s3 = AsyncMock()
@@ -839,7 +934,21 @@ class TestLogging:
         """Test that presign errors are logged."""
         artifact_id = "error-test"
 
-        test_record = {"key": "test/key"}
+        test_record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            sha256="abc123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
         presigned_operations._get_record = AsyncMock(return_value=test_record)
 
         mock_s3 = AsyncMock()

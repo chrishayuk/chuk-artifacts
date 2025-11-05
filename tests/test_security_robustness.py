@@ -77,7 +77,7 @@ class TestSecurityInputSanitization:
 
                     # If it succeeds, metadata should be safe
                     metadata = await store.metadata(artifact_id)
-                    stored_filename = metadata.get("filename")
+                    stored_filename = metadata.filename
 
                     # Filename should be stored as-is or sanitized (not cause errors)
                     assert isinstance(stored_filename, (str, type(None)))
@@ -122,7 +122,7 @@ class TestSecurityInputSanitization:
 
                 # If stored, metadata should be safely handled
                 metadata = await store.metadata(artifact_id)
-                stored_meta = metadata.get("meta", {})
+                stored_meta = metadata.meta
 
                 # Verify metadata is stored as strings/primitives
                 for key, value in stored_meta.items():

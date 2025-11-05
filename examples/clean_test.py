@@ -70,10 +70,10 @@ async def complete_verification():
         print(f"   ✅ Exists check: {exists}")
 
         metadata = await store.metadata(artifact_id)
-        print(f"   ✅ Metadata: {metadata['mime']} ({metadata['bytes']} bytes)")
-        print(f"   ✅ Filename: {metadata['filename']}")
-        print(f"   ✅ Custom meta: {metadata['meta']}")
-        print(f"   ✅ SHA256: {metadata['sha256'][:16]}...")
+        print(f"   ✅ Metadata: {metadata.mime} ({metadata.bytes} bytes)")
+        print(f"   ✅ Filename: {metadata.filename}")
+        print(f"   ✅ Custom meta: {metadata.meta}")
+        print(f"   ✅ SHA256: {metadata.sha256[:16]}...")
 
         print("\n🔗 Step 4: Presigned Download URLs")
         try:
@@ -103,8 +103,8 @@ async def complete_verification():
         updated_data = await store.retrieve(artifact_id)
         updated_meta = await store.metadata(artifact_id)
         print(f"   ✅ Updated content: {updated_data.decode()[:30]}...")
-        print(f"   ✅ Updated summary: {updated_meta['summary']}")
-        print(f"   ✅ Updated meta: {updated_meta['meta']}")
+        print(f"   ✅ Updated summary: {updated_meta.summary}")
+        print(f"   ✅ Updated meta: {updated_meta.meta}")
 
         print("\n📊 Step 6: Batch Operations")
         batch_items = [
@@ -156,22 +156,22 @@ async def complete_verification():
             summary="Final updated summary for complete test",
             meta={"final_update": True, "version": 3},
         )
-        print(f"   ✅ Updated metadata: {updated_meta['summary']}")
-        print(f"   ✅ Updated meta: {updated_meta['meta']}")
+        print(f"   ✅ Updated metadata: {updated_meta.summary}")
+        print(f"   ✅ Updated meta: {updated_meta.meta}")
 
         # Test TTL extension
         extended_meta = await store.extend_ttl(artifact_id, 3600)  # Add 1 hour
-        print(f"   ✅ Extended TTL: {extended_meta['ttl']} seconds")
+        print(f"   ✅ Extended TTL: {extended_meta.ttl} seconds")
 
         print("\n📋 Step 9: Session Listing")
         # Test listing artifacts by session
-        session_id = metadata["session_id"]
+        session_id = metadata.session_id
         session_artifacts = await store.list_by_session(session_id)
         print(
             f"   ✅ Session {session_id[:20]}... has {len(session_artifacts)} artifacts"
         )
         for artifact in session_artifacts[:2]:  # Show first 2
-            print(f"      - {artifact['filename']}: {artifact['summary']}")
+            print(f"      - {artifact.filename}: {artifact.summary}")
 
         print("\n🗑️ Step 10: Cleanup Operations")
         # Delete individual artifact

@@ -8,7 +8,8 @@ All components (sandbox_id, session_id, artifact_id) must be non-empty strings
 to ensure proper grid organization and prevent path collisions.
 """
 
-from typing import Optional, Dict
+from typing import Optional
+from .models import GridKeyComponents
 
 _ROOT = "grid"
 
@@ -71,7 +72,7 @@ def artifact_key(sandbox_id: str, session_id: str, artifact_id: str) -> str:
     return f"{_ROOT}/{sandbox_id}/{session_id}/{artifact_id}"
 
 
-def parse(key: str) -> Optional[Dict[str, Optional[str]]]:
+def parse(key: str) -> Optional[GridKeyComponents]:
     """
     Parse a grid key into components.
 
@@ -79,14 +80,14 @@ def parse(key: str) -> Optional[Dict[str, Optional[str]]]:
         key: Grid key to parse
 
     Returns:
-        Dictionary with components, or None if invalid
+        GridKeyComponents model with parsed components, or None if invalid
 
     Examples:
         >>> parse("grid/sandbox/session/artifact")
-        {'sandbox_id': 'sandbox', 'session_id': 'session', 'artifact_id': 'artifact', 'subpath': None}
+        GridKeyComponents(sandbox_id='sandbox', session_id='session', artifact_id='artifact', subpath=None)
 
         >>> parse("grid/sandbox/session/artifact/sub/path")
-        {'sandbox_id': 'sandbox', 'session_id': 'session', 'artifact_id': 'artifact', 'subpath': 'sub/path'}
+        GridKeyComponents(sandbox_id='sandbox', session_id='session', artifact_id='artifact', subpath='sub/path')
 
         >>> parse("invalid/key")
         None
@@ -113,6 +114,10 @@ def parse(key: str) -> Optional[Dict[str, Optional[str]]]:
     if not sandbox_id or not session_id or not artifact_id:
         return None
 
+    # Check for slashes in components
+    if "/" in sandbox_id or "/" in session_id or "/" in artifact_id:
+        return None
+
     # Handle subpath
     subpath = None
     if len(parts) > 4:
@@ -122,12 +127,15 @@ def parse(key: str) -> Optional[Dict[str, Optional[str]]]:
         if subpath == "":
             subpath = None
 
-    return {
-        "sandbox_id": sandbox_id,
-        "session_id": session_id,
-        "artifact_id": artifact_id,
-        "subpath": subpath,
-    }
+    try:
+        return GridKeyComponents(
+            sandbox_id=sandbox_id,
+            session_id=session_id,
+            artifact_id=artifact_id,
+            subpath=subpath,
+        )
+    except Exception:
+        return None
 
 
 def is_valid_grid_key(key: str) -> bool:
@@ -143,7 +151,7 @@ def is_valid_grid_key(key: str) -> bool:
     return parse(key) is not None
 
 
-def validate_grid_key(key: str) -> Dict[str, Optional[str]]:
+def validate_grid_key(key: str) -> GridKeyComponents:
     """
     Validate and parse a grid key, raising an exception if invalid.
 
@@ -151,7 +159,7 @@ def validate_grid_key(key: str) -> Dict[str, Optional[str]]:
         key: Grid key to validate
 
     Returns:
-        Parsed grid components
+        Parsed grid components as GridKeyComponents model
 
     Raises:
         GridError: If key is invalid

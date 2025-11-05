@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import uuid
 import hashlib
-import json
 import logging
 import asyncio
 from datetime import datetime
@@ -19,6 +18,7 @@ if TYPE_CHECKING:
     from .store import ArtifactStore
 
 from .exceptions import ArtifactStoreError
+from .models import ArtifactMetadata, BatchStoreItem
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +33,36 @@ class BatchOperations:
 
     async def store_batch(
         self,
-        items: List[Dict[str, Any]],
+        items: List[BatchStoreItem] | List[Dict[str, Any]],
         session_id: str | None = None,
         ttl: int = _DEFAULT_TTL,
     ) -> List[str]:
-        """Store multiple artifacts in a batch operation."""
+        """
+        Store multiple artifacts in a batch operation.
+
+        Args:
+            items: List of BatchStoreItem models or dicts with the same structure
+            session_id: Optional session ID (will be allocated if not provided)
+            ttl: Time-to-live for metadata in seconds
+
+        Returns:
+            List of artifact IDs (None for failed items)
+        """
         if self.artifact_store._closed:
             raise ArtifactStoreError("Store is closed")
+
+        # Validate and convert items to BatchStoreItem if needed
+        validated_items = []
+        for i, item in enumerate(items):
+            if isinstance(item, dict):
+                try:
+                    validated_items.append(BatchStoreItem(**item))
+                except Exception as e:
+                    logger.error(f"Invalid batch item {i}: {e}")
+                    # Add None for invalid items so they fail gracefully
+                    validated_items.append(None)
+            else:
+                validated_items.append(item)
 
         # Ensure session is allocated using chuk_sessions
         if session_id is None:
@@ -52,40 +75,46 @@ class BatchOperations:
         artifact_ids = []
         failed_items = []
 
-        for i, item in enumerate(items):
+        for i, item in enumerate(validated_items):
             try:
+                # Skip items that failed validation
+                if item is None:
+                    artifact_ids.append(None)
+                    failed_items.append(i)
+                    continue
+
                 artifact_id = uuid.uuid4().hex
                 key = self.artifact_store.generate_artifact_key(session_id, artifact_id)
 
                 # Store in object storage
                 await self._store_with_retry(
-                    item["data"], key, item["mime"], item.get("filename"), session_id
+                    item.data, key, item.mime, item.filename, session_id
                 )
 
-                # Prepare metadata record
-                record = {
-                    "artifact_id": artifact_id,
-                    "session_id": session_id,
-                    "sandbox_id": self.artifact_store.sandbox_id,
-                    "key": key,
-                    "mime": item["mime"],
-                    "summary": item["summary"],
-                    "meta": item.get("meta", {}),
-                    "filename": item.get("filename"),
-                    "bytes": len(item["data"]),
-                    "sha256": hashlib.sha256(item["data"]).hexdigest(),
-                    "stored_at": datetime.utcnow().isoformat() + "Z",
-                    "ttl": ttl,
-                    "storage_provider": self.artifact_store._storage_provider_name,
-                    "session_provider": self.artifact_store._session_provider_name,
-                    "batch_operation": True,
-                    "batch_index": i,
-                }
+                # Prepare metadata record using Pydantic model
+                record = ArtifactMetadata(
+                    artifact_id=artifact_id,
+                    session_id=session_id,
+                    sandbox_id=self.artifact_store.sandbox_id,
+                    key=key,
+                    mime=item.mime,
+                    summary=item.summary,
+                    meta=item.meta or {},
+                    filename=item.filename,
+                    bytes=len(item.data),
+                    sha256=hashlib.sha256(item.data).hexdigest(),
+                    stored_at=datetime.utcnow().isoformat() + "Z",
+                    ttl=ttl,
+                    storage_provider=self.artifact_store._storage_provider_name,
+                    session_provider=self.artifact_store._session_provider_name,
+                    batch_operation=True,
+                    batch_index=i,
+                )
 
                 # Store metadata via session provider
                 session_ctx_mgr = self.artifact_store._session_factory()
                 async with session_ctx_mgr as session:
-                    await session.setex(artifact_id, ttl, json.dumps(record))
+                    await session.setex(artifact_id, ttl, record.model_dump_json())
 
                 artifact_ids.append(artifact_id)
 

@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Callable, AsyncContextManager, Optional, Uni
 from importlib.util import find_spec
 from chuk_sessions.session_manager import SessionManager
 from .grid import canonical_prefix, artifact_key, parse
+from .models import ArtifactMetadata, GridKeyComponents
 
 # Check for required dependencies
 if not find_spec("aioboto3"):
@@ -210,7 +211,7 @@ class ArtifactStore:
         """Retrieve artifact data."""
         return await self._core.retrieve(artifact_id)
 
-    async def metadata(self, artifact_id: str) -> Dict[str, Any]:
+    async def metadata(self, artifact_id: str) -> ArtifactMetadata:
         """Get artifact metadata."""
         return await self._metadata.get_metadata(artifact_id)
 
@@ -285,7 +286,7 @@ class ArtifactStore:
         """Generate grid artifact key."""
         return artifact_key(self.sandbox_id, session_id, artifact_id)
 
-    def parse_grid_key(self, grid_key: str) -> Optional[Dict[str, Any]]:
+    def parse_grid_key(self, grid_key: str) -> Optional[GridKeyComponents]:
         """Parse grid key to extract components."""
         return parse(grid_key)
 
@@ -376,7 +377,7 @@ class ArtifactStore:
         """Copy a file WITHIN THE SAME SESSION only (security enforced)."""
         # Get original metadata to check session
         original_meta = await self.metadata(artifact_id)
-        original_session = original_meta.get("session_id")
+        original_session = original_meta.session_id
 
         # STRICT SECURITY: Block ALL cross-session copies
         if target_session_id and target_session_id != original_session:
@@ -391,13 +392,11 @@ class ArtifactStore:
         original_data = await self.retrieve(artifact_id)
 
         # Prepare copy metadata
-        copy_filename = new_filename or (
-            (original_meta.get("filename", "file") or "file") + "_copy"
-        )
-        copy_summary = summary or f"Copy of {original_meta.get('summary', 'artifact')}"
+        copy_filename = new_filename or ((original_meta.filename or "file") + "_copy")
+        copy_summary = summary or f"Copy of {original_meta.summary}"
 
         # Merge metadata
-        copy_meta = {**original_meta.get("meta", {})}
+        copy_meta = {**original_meta.meta}
         if new_meta:
             copy_meta.update(new_meta)
 
@@ -408,7 +407,7 @@ class ArtifactStore:
         # Store the copy in the same session
         return await self.store(
             data=original_data,
-            mime=original_meta["mime"],
+            mime=original_meta.mime,
             summary=copy_summary,
             filename=copy_filename,
             session_id=original_session,  # Always same session
@@ -422,11 +421,11 @@ class ArtifactStore:
         new_filename: str = None,
         new_session_id: str = None,
         new_meta: Dict[str, Any] = None,
-    ) -> Dict[str, Any]:
+    ) -> ArtifactMetadata:
         """Move/rename a file WITHIN THE SAME SESSION only (security enforced)."""
         # Get current metadata
         record = await self.metadata(artifact_id)
-        current_session = record.get("session_id")
+        current_session = record.session_id
 
         # STRICT SECURITY: Block ALL cross-session moves
         if new_session_id and new_session_id != current_session:
@@ -441,11 +440,9 @@ class ArtifactStore:
         # A full implementation would update the metadata record
         if new_filename:
             # This is a simplified move - just return updated record
-            record["filename"] = new_filename
+            record.filename = new_filename
         if new_meta:
-            existing_meta = record.get("meta", {})
-            existing_meta.update(new_meta)
-            record["meta"] = existing_meta
+            record.meta.update(new_meta)
 
         return record
 

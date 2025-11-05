@@ -65,12 +65,12 @@ async def clean_grid_demo():
             )
 
             metadata = await store.metadata(artifact_id)
-            session_id = metadata["session_id"]
+            session_id = metadata.session_id
 
             print(f"✅ Auto-allocated session: {session_id}")
             print(f"   Artifact: {artifact_id}")
-            print(f"   Grid key: {metadata['key']}")
-            print(f"   Sandbox: {metadata['sandbox_id']}")
+            print(f"   Grid key: {metadata.key}")
+            print(f"   Sandbox: {metadata.sandbox_id}")
 
             # ─────────────────────────────────────────────────────────────
             # Demo 2: Explicit session creation
@@ -107,14 +107,14 @@ async def clean_grid_demo():
             # Show individual artifact keys
             for i, file_id in enumerate(files):
                 meta = await store.metadata(file_id)
-                print(f"   File {i} key: {meta['key']}")
+                print(f"   File {i} key: {meta.key}")
 
             # Parse a grid key to show structure
-            parsed = store.parse_grid_key(meta["key"])
+            parsed = store.parse_grid_key(meta.key)
             print("✅ Parsed grid key:")
-            print(f"   Sandbox: {parsed['sandbox_id']}")
-            print(f"   Session: {parsed['session_id']}")
-            print(f"   Artifact: {parsed['artifact_id']}")
+            print(f"   Sandbox: {parsed.sandbox_id}")
+            print(f"   Session: {parsed.session_id}")
+            print(f"   Artifact: {parsed.artifact_id}")
 
             # ─────────────────────────────────────────────────────────────
             # Demo 4: Session-based listing
@@ -126,13 +126,13 @@ async def clean_grid_demo():
             alice_files = await store.list_by_session(session_id)
             print(f"✅ Alice's session ({len(alice_files)} files):")
             for file_meta in alice_files:
-                print(f"   - {file_meta['filename']} ({file_meta['bytes']} bytes)")
+                print(f"   - {file_meta.filename} ({file_meta.bytes} bytes)")
 
             # List Bob's files
             bob_files = await store.list_by_session(bob_session)
             print(f"✅ Bob's session ({len(bob_files)} files):")
             for file_meta in bob_files:
-                print(f"   - {file_meta['filename']} ({file_meta['bytes']} bytes)")
+                print(f"   - {file_meta.filename} ({file_meta.bytes} bytes)")
 
             # ─────────────────────────────────────────────────────────────
             # Demo 5: File operations
@@ -198,7 +198,7 @@ async def clean_grid_demo():
 
             print("✅ Clean path structure:")
             print("   Pattern: grid/{sandbox}/{session}/{artifact}")
-            print(f"   Example: {metadata['key']}")
+            print(f"   Example: {metadata.key}")
             print("")
             print("✅ Federation ready:")
             print(f"   Sandbox isolation: {store.sandbox_id}")
@@ -321,8 +321,8 @@ async def multi_sandbox_demo():
                 meta_b = await store_b.metadata(file_b)
 
                 print("\n✅ Perfect isolation demonstrated:")
-                print(f"   Company A path: {meta_a['key']}")
-                print(f"   Company B path: {meta_b['key']}")
+                print(f"   Company A path: {meta_a.key}")
+                print(f"   Company B path: {meta_b.key}")
                 print("   Same user, different sandboxes = complete isolation")
 
     finally:

@@ -15,7 +15,12 @@ import pytest
 import json
 from pydantic import ValidationError
 
-from chuk_artifacts.models import ArtifactEnvelope
+from chuk_artifacts.models import (
+    ArtifactEnvelope,
+    ArtifactMetadata,
+    GridKeyComponents,
+    BatchStoreItem,
+)
 
 
 class TestArtifactEnvelopeBasics:
@@ -717,6 +722,474 @@ class TestArtifactEnvelopeUseCases:
         assert envelope.artifact_id == ""
         assert envelope.meta["error"]["code"] == "INVALID_FORMAT"
         assert envelope.meta["retry_count"] == 3
+
+
+# ============================================================================
+# ArtifactMetadata Tests
+# ============================================================================
+
+
+class TestArtifactMetadataBasics:
+    """Test basic ArtifactMetadata functionality."""
+
+    def test_minimal_creation(self):
+        """Test creating ArtifactMetadata with required fields."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/sandbox789/session456/test123",
+            mime="text/plain",
+            summary="Test artifact",
+            bytes=1024,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+
+        assert metadata.artifact_id == "test123"
+        assert metadata.session_id == "session456"
+        assert metadata.bytes == 1024
+        assert metadata.ttl == 900
+        assert metadata.meta == {}
+
+    def test_with_optional_fields(self):
+        """Test creating ArtifactMetadata with optional fields."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/sandbox789/session456/test123",
+            mime="image/jpeg",
+            summary="Image",
+            bytes=2048,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=3600,
+            storage_provider="s3",
+            session_provider="redis",
+            filename="photo.jpg",
+            sha256="abc123",
+            batch_operation=True,
+            batch_index=5,
+            uploaded_via_presigned=True,
+            updated_at="2025-01-02T00:00:00Z",
+            meta={"custom": "data"},
+        )
+
+        assert metadata.filename == "photo.jpg"
+        assert metadata.sha256 == "abc123"
+        assert metadata.batch_operation is True
+        assert metadata.batch_index == 5
+        assert metadata.uploaded_via_presigned is True
+        assert metadata.updated_at == "2025-01-02T00:00:00Z"
+        assert metadata.meta["custom"] == "data"
+
+
+class TestArtifactMetadataValidation:
+    """Test ArtifactMetadata validation."""
+
+    def test_negative_bytes_rejected(self):
+        """Test that negative bytes values are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArtifactMetadata(
+                artifact_id="test123",
+                session_id="session456",
+                sandbox_id="sandbox789",
+                key="grid/test",
+                mime="text/plain",
+                summary="Test",
+                bytes=-1,  # Invalid
+                stored_at="2025-01-01T00:00:00Z",
+                ttl=900,
+                storage_provider="memory",
+                session_provider="memory",
+            )
+
+        # Pydantic Field constraint catches this first
+        assert "greater than or equal to 0" in str(exc_info.value)
+
+    def test_zero_ttl_rejected(self):
+        """Test that zero TTL is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArtifactMetadata(
+                artifact_id="test123",
+                session_id="session456",
+                sandbox_id="sandbox789",
+                key="grid/test",
+                mime="text/plain",
+                summary="Test",
+                bytes=100,
+                stored_at="2025-01-01T00:00:00Z",
+                ttl=0,  # Invalid
+                storage_provider="memory",
+                session_provider="memory",
+            )
+
+        # Pydantic Field constraint catches this
+        assert "greater than 0" in str(exc_info.value)
+
+    def test_negative_ttl_rejected(self):
+        """Test that negative TTL is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArtifactMetadata(
+                artifact_id="test123",
+                session_id="session456",
+                sandbox_id="sandbox789",
+                key="grid/test",
+                mime="text/plain",
+                summary="Test",
+                bytes=100,
+                stored_at="2025-01-01T00:00:00Z",
+                ttl=-100,  # Invalid
+                storage_provider="memory",
+                session_provider="memory",
+            )
+
+        # Pydantic Field constraint catches this
+        assert "greater than 0" in str(exc_info.value)
+
+
+class TestArtifactMetadataDictAccess:
+    """Test backwards-compatible dict-like access for ArtifactMetadata."""
+
+    def test_getitem_attribute_access(self):
+        """Test __getitem__ for regular attributes."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/test",
+            mime="text/plain",
+            summary="Test",
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+
+        assert metadata["artifact_id"] == "test123"
+        assert metadata["session_id"] == "session456"
+        assert metadata["bytes"] == 100
+        assert metadata["mime"] == "text/plain"
+
+    def test_getitem_extra_fields(self):
+        """Test __getitem__ for extra fields."""
+        # Create with extra field via model_validate
+        data = {
+            "artifact_id": "test123",
+            "session_id": "session456",
+            "sandbox_id": "sandbox789",
+            "key": "grid/test",
+            "mime": "text/plain",
+            "summary": "Test",
+            "bytes": 100,
+            "stored_at": "2025-01-01T00:00:00Z",
+            "ttl": 900,
+            "storage_provider": "memory",
+            "session_provider": "memory",
+            "custom_field": "custom_value",  # Extra field
+        }
+        metadata = ArtifactMetadata.model_validate(data)
+
+        assert metadata["custom_field"] == "custom_value"
+
+    def test_getitem_missing_key(self):
+        """Test __getitem__ raises KeyError for missing keys."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/test",
+            mime="text/plain",
+            summary="Test",
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+
+        with pytest.raises(KeyError):
+            _ = metadata["nonexistent_field"]
+
+    def test_get_method(self):
+        """Test get() method returns value or default."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/test",
+            mime="text/plain",
+            summary="Test",
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+
+        assert metadata.get("artifact_id") == "test123"
+        assert metadata.get("nonexistent") is None
+        assert metadata.get("nonexistent", "default") == "default"
+
+    def test_keys_method(self):
+        """Test keys() method returns all field names."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/test",
+            mime="text/plain",
+            summary="Test",
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+
+        keys = metadata.keys()
+        assert "artifact_id" in keys
+        assert "session_id" in keys
+        assert "bytes" in keys
+
+    def test_values_method(self):
+        """Test values() method returns all field values."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/test",
+            mime="text/plain",
+            summary="Test",
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+
+        values = list(metadata.values())
+        assert "test123" in values
+        assert "session456" in values
+        assert 100 in values
+
+    def test_items_method(self):
+        """Test items() method returns key-value pairs."""
+        metadata = ArtifactMetadata(
+            artifact_id="test123",
+            session_id="session456",
+            sandbox_id="sandbox789",
+            key="grid/test",
+            mime="text/plain",
+            summary="Test",
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+
+        items = dict(metadata.items())
+        assert items["artifact_id"] == "test123"
+        assert items["session_id"] == "session456"
+        assert items["bytes"] == 100
+
+
+# ============================================================================
+# GridKeyComponents Tests
+# ============================================================================
+
+
+class TestGridKeyComponentsBasics:
+    """Test basic GridKeyComponents functionality."""
+
+    def test_minimal_creation(self):
+        """Test creating GridKeyComponents with required fields."""
+        components = GridKeyComponents(
+            sandbox_id="sandbox123",
+            session_id="session456",
+            artifact_id="artifact789",
+        )
+
+        assert components.sandbox_id == "sandbox123"
+        assert components.session_id == "session456"
+        assert components.artifact_id == "artifact789"
+        assert components.subpath is None
+
+    def test_with_subpath(self):
+        """Test creating GridKeyComponents with subpath."""
+        components = GridKeyComponents(
+            sandbox_id="sandbox123",
+            session_id="session456",
+            artifact_id="artifact789",
+            subpath="path/to/file.txt",
+        )
+
+        assert components.subpath == "path/to/file.txt"
+
+    def test_immutable(self):
+        """Test that GridKeyComponents is immutable."""
+        components = GridKeyComponents(
+            sandbox_id="sandbox123",
+            session_id="session456",
+            artifact_id="artifact789",
+        )
+
+        with pytest.raises(ValidationError):
+            components.sandbox_id = "modified"
+
+
+class TestGridKeyComponentsValidation:
+    """Test GridKeyComponents validation."""
+
+    def test_sandbox_id_with_slash_rejected(self):
+        """Test that sandbox_id with slash is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            GridKeyComponents(
+                sandbox_id="sandbox/123",  # Invalid
+                session_id="session456",
+                artifact_id="artifact789",
+            )
+
+        assert "cannot contain '/'" in str(exc_info.value)
+
+    def test_session_id_with_slash_rejected(self):
+        """Test that session_id with slash is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            GridKeyComponents(
+                sandbox_id="sandbox123",
+                session_id="session/456",  # Invalid
+                artifact_id="artifact789",
+            )
+
+        assert "cannot contain '/'" in str(exc_info.value)
+
+    def test_artifact_id_with_slash_rejected(self):
+        """Test that artifact_id with slash is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            GridKeyComponents(
+                sandbox_id="sandbox123",
+                session_id="session456",
+                artifact_id="artifact/789",  # Invalid
+            )
+
+        assert "cannot contain '/'" in str(exc_info.value)
+
+
+class TestGridKeyComponentsDictAccess:
+    """Test backwards-compatible dict-like access for GridKeyComponents."""
+
+    def test_getitem_access(self):
+        """Test __getitem__ for accessing components."""
+        components = GridKeyComponents(
+            sandbox_id="sandbox123",
+            session_id="session456",
+            artifact_id="artifact789",
+        )
+
+        assert components["sandbox_id"] == "sandbox123"
+        assert components["session_id"] == "session456"
+        assert components["artifact_id"] == "artifact789"
+
+    def test_getitem_missing_key(self):
+        """Test __getitem__ raises KeyError for missing keys."""
+        components = GridKeyComponents(
+            sandbox_id="sandbox123",
+            session_id="session456",
+            artifact_id="artifact789",
+        )
+
+        with pytest.raises(KeyError):
+            _ = components["nonexistent"]
+
+    def test_get_method(self):
+        """Test get() method returns value or default."""
+        components = GridKeyComponents(
+            sandbox_id="sandbox123",
+            session_id="session456",
+            artifact_id="artifact789",
+        )
+
+        assert components.get("sandbox_id") == "sandbox123"
+        assert components.get("nonexistent") is None
+        assert components.get("nonexistent", "default") == "default"
+
+
+# ============================================================================
+# BatchStoreItem Tests
+# ============================================================================
+
+
+class TestBatchStoreItemBasics:
+    """Test basic BatchStoreItem functionality."""
+
+    def test_minimal_creation(self):
+        """Test creating BatchStoreItem with required fields."""
+        item = BatchStoreItem(
+            data=b"test data",
+            mime="text/plain",
+            summary="Test item",
+        )
+
+        assert item.data == b"test data"
+        assert item.mime == "text/plain"
+        assert item.summary == "Test item"
+        assert item.meta is None
+        assert item.filename is None
+
+    def test_full_creation(self):
+        """Test creating BatchStoreItem with all fields."""
+        item = BatchStoreItem(
+            data=b"test data",
+            mime="image/jpeg",
+            summary="Image item",
+            meta={"custom": "metadata"},
+            filename="photo.jpg",
+        )
+
+        assert item.data == b"test data"
+        assert item.mime == "image/jpeg"
+        assert item.summary == "Image item"
+        assert item.meta == {"custom": "metadata"}
+        assert item.filename == "photo.jpg"
+
+
+class TestBatchStoreItemValidation:
+    """Test BatchStoreItem validation."""
+
+    def test_empty_data_rejected(self):
+        """Test that empty data is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            BatchStoreItem(
+                data=b"",  # Invalid
+                mime="text/plain",
+                summary="Test",
+            )
+
+        assert "data cannot be empty" in str(exc_info.value)
+
+    def test_empty_mime_rejected(self):
+        """Test that empty mime is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            BatchStoreItem(
+                data=b"test",
+                mime="",  # Invalid
+                summary="Test",
+            )
+
+        assert "at least 1 character" in str(exc_info.value)
+
+    def test_missing_required_fields(self):
+        """Test that missing required fields are rejected."""
+        with pytest.raises(ValidationError):
+            BatchStoreItem(
+                data=b"test",
+                mime="text/plain",
+                # missing summary
+            )
 
 
 if __name__ == "__main__":

@@ -50,8 +50,8 @@ async def basic_usage():
 
         # Get metadata (this works with memory provider)
         meta = await store.metadata(artifact_id)
-        print(f"✅ Stored at: {meta['stored_at']}")
-        print(f"✅ Storage provider: {meta['storage_provider']}")
+        print(f"✅ Stored at: {meta.stored_at}")
+        print(f"✅ Storage provider: {meta.storage_provider}")
 
         # Note: Retrieve might fail with memory provider due to isolation
         try:
@@ -101,8 +101,8 @@ async def filesystem_usage():
 
         # Get detailed metadata
         meta = await store.metadata(artifact_id)
-        print(f"✅ File size: {meta['bytes']} bytes")
-        print(f"✅ Custom metadata: {meta['meta']}")
+        print(f"✅ File size: {meta.bytes} bytes")
+        print(f"✅ Custom metadata: {meta.meta}")
 
     finally:
         await store.close()
@@ -211,7 +211,7 @@ async def batch_usage():
             if artifact_id:
                 meta = await store.metadata(artifact_id)
                 data = await store.retrieve(artifact_id)
-                print(f"   📄 {meta['filename']}: {meta['bytes']} bytes")
+                print(f"   📄 {meta.filename}: {meta.bytes} bytes")
                 print(f"      Content: {data.decode()[:50]}...")
 
     finally:
@@ -264,7 +264,7 @@ async def robust_usage():
 
             # Test metadata operations
             meta = await store.metadata(artifact_id)
-            print(f"✅ Metadata retrieved: {meta['summary']}")
+            print(f"✅ Metadata retrieved: {meta.summary}")
 
             # Test presigned URL operations
             url = await store.presign_medium(artifact_id)

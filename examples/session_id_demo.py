@@ -79,7 +79,7 @@ async def demo_case(
             Session ID       : {session_id}
             Canonical prefix : {canonical_prefix}
             Generated key    : {artifact_key}
-            Metadata['key']  : {metadata['key']}
+            Metadata['key']  : {metadata.key}
         """)
         )
 
