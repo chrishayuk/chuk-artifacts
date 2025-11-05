@@ -107,6 +107,7 @@ class BatchOperations:
                     ttl=ttl,
                     storage_provider=self.artifact_store._storage_provider_name,
                     session_provider=self.artifact_store._session_provider_name,
+                    owner_id=None,
                     batch_operation=True,
                     batch_index=i,
                 )

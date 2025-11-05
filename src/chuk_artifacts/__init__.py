@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 # Core classes
 from .store import ArtifactStore
-from .models import ArtifactEnvelope
+from .models import ArtifactEnvelope, AccessContext
 
 # Exception classes
 from .exceptions import (
@@ -23,6 +23,7 @@ from .exceptions import (
     ArtifactCorruptedError,
     ProviderError,
     SessionError,
+    AccessDeniedError,
 )
 
 # Operation modules (for advanced usage)
@@ -45,6 +46,7 @@ __all__ = [
     "ArtifactStore",
     # Models
     "ArtifactEnvelope",
+    "AccessContext",
     # Exceptions
     "ArtifactStoreError",
     "ArtifactNotFoundError",
@@ -52,6 +54,7 @@ __all__ = [
     "ArtifactCorruptedError",
     "ProviderError",
     "SessionError",
+    "AccessDeniedError",
     # Operation modules (advanced usage)
     "CoreStorageOperations",
     "PresignedURLOperations",

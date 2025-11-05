@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/models.py
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
@@ -32,6 +32,11 @@ class ArtifactMetadata(BaseModel):
 
     Supports both attribute access (metadata.key) and dict-style access (metadata["key"])
     for backwards compatibility.
+
+    Storage Scopes:
+    - session: Ephemeral, tied to a session (default, 15min-24h TTL)
+    - user: Persistent, tied to a user (long/no TTL)
+    - sandbox: Shared across sandbox (long/no TTL)
     """
 
     artifact_id: str
@@ -48,6 +53,16 @@ class ArtifactMetadata(BaseModel):
     ttl: int = Field(gt=0)  # Time-to-live in seconds (must be > 0)
     storage_provider: str  # e.g., "s3", "filesystem", "memory"
     session_provider: str  # e.g., "redis", "memory"
+
+    # Scope-based storage (Phase 1 expansion)
+    scope: Literal["session", "user", "sandbox"] = Field(
+        default="session",
+        description="Storage scope: session (ephemeral), user (persistent), or sandbox (shared)",
+    )
+    owner_id: Optional[str] = Field(
+        None,
+        description="Owner identifier - user_id for user scope, None for session/sandbox scope",
+    )
 
     # Optional fields for specific upload methods
     batch_operation: Optional[bool] = None
@@ -170,3 +185,17 @@ class BatchStoreItem(BaseModel):
         if len(v) == 0:
             raise ValueError("data cannot be empty")
         return v
+
+
+class AccessContext(BaseModel):
+    """
+    Context for access control checks.
+
+    Represents the identity of the requestor attempting to access an artifact.
+    """
+
+    user_id: Optional[str] = Field(None, description="User ID of the requestor")
+    session_id: Optional[str] = Field(None, description="Session ID of the requestor")
+    sandbox_id: str = Field(description="Sandbox ID (must match artifact's sandbox)")
+
+    model_config = ConfigDict(frozen=True)  # Immutable for security

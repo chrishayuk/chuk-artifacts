@@ -232,6 +232,7 @@ class PresignedURLOperations:
                 ttl=ttl,
                 storage_provider=self.artifact_store._storage_provider_name,
                 session_provider=self.artifact_store._session_provider_name,
+                owner_id=None,
                 uploaded_via_presigned=True,  # Flag to indicate upload method
             )
 

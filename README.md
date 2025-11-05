@@ -1,15 +1,15 @@
 # CHUK Artifacts
 
-> **Session-scoped artifact storage with a unified API and secure presigned uploads—built for AI apps and MCP servers**
+> **Scope-based artifact storage with persistent user files, secure sessions, and presigned uploads—built for AI apps and MCP servers**
 
 [![PyPI version](https://img.shields.io/pypi/v/chuk-artifacts)](https://pypi.org/project/chuk-artifacts/)
 [![Python](https://img.shields.io/pypi/pyversions/chuk-artifacts.svg)](https://pypi.org/project/chuk-artifacts/)
-[![Tests](https://img.shields.io/badge/tests-595%20passing-success.svg)](#testing)
-[![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-647%20passing-success.svg)](#testing)
+[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](#testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Async](https://img.shields.io/badge/async-await-green.svg)](https://docs.python.org/3/library/asyncio.html)
 
-CHUK Artifacts provides a unified, async API for storing and retrieving files ("artifacts") across local development and production cloud environments—while enforcing session boundaries and issuing presigned upload/download URLs so clients interact with storage directly and securely.
+CHUK Artifacts provides a unified, async API for storing and retrieving files ("artifacts") across local development and production cloud environments. Store ephemeral session files, persistent user documents, and shared resources—all with automatic access control, grid-based organization, and presigned upload/download URLs for secure client-side storage interaction.
 
 ---
 
@@ -22,6 +22,7 @@ CHUK Artifacts provides a unified, async API for storing and retrieving files ("
 - [Quick Start](#quick-start)
 - [Providers & Sessions](#providers--sessions)
 - [Core Concepts](#core-concepts)
+- [Storage Scopes](#storage-scopes)
 - [Common Recipes](#common-recipes)
 - [Configuration](#configuration)
 - [Advanced Features](#advanced-features)
@@ -83,7 +84,8 @@ CHUK Artifacts is **not**:
 - ❌ A framework-specific storage layer (Django, Supabase, Firebase)
 
 CHUK Artifacts **is**:
-- ✅ A security and session boundary over object storage
+- ✅ A multi-scope storage system (ephemeral, persistent, shared)
+- ✅ A security and access control layer over object storage
 - ✅ A unified API across Memory / FS / S3 / COS
 - ✅ A presigned upload workflow system
 - ✅ A grid-based storage architecture for multi-tenant AI apps
@@ -99,8 +101,10 @@ CHUK Artifacts **is**:
 - ❌ No built-in metadata tracking with TTL expiration
 
 **CHUK Artifacts provides:**
-- ✅ **Session isolation** - Every file belongs to a session, preventing data leaks
-- ✅ **Predictable grid paths** - `grid/{sandbox}/{session}/{artifact}` for infinite scale
+- ✅ **Three storage scopes** - Session (ephemeral), User (persistent), Sandbox (shared)
+- ✅ **Access control** - User-based permissions with automatic enforcement
+- ✅ **Search functionality** - Find artifacts by user, MIME type, or custom metadata
+- ✅ **Predictable grid paths** - Scope-based organization for infinite scale
 - ✅ **Unified API** - Same code works across Memory, Filesystem, S3, IBM COS
 - ✅ **Presigned URLs** - Secure direct upload/download without exposing credentials
 - ✅ **Async-first** - Built for FastAPI, MCP servers, and modern Python apps
@@ -214,15 +218,18 @@ export ARTIFACT_BUCKET=my-bucket
 
 ### Grid Architecture = Infinite Scale
 
-Files are organized in a predictable, hierarchical **grid** structure:
+Files are organized in a predictable, hierarchical **grid** structure with three storage scopes:
 
 ```
 grid/
-├── {sandbox_id}/          # Application/environment isolation
-│   ├── {session_id}/      # User/workflow grouping
-│   │   ├── {artifact_id}  # Individual files
+├── {sandbox_id}/
+│   ├── sessions/{session_id}/    # Session-scoped (ephemeral)
+│   │   ├── {artifact_id}
 │   │   └── {artifact_id}
-│   └── {session_id}/
+│   ├── users/{user_id}/           # User-scoped (persistent)
+│   │   ├── {artifact_id}
+│   │   └── {artifact_id}
+│   └── shared/                    # Sandbox-scoped (shared)
 │       ├── {artifact_id}
 │       └── {artifact_id}
 └── {sandbox_id}/
@@ -324,6 +331,176 @@ try:
     await store.copy_file(alice_file, target_session_id=bob_meta.session_id)
 except ArtifactStoreError:
     print("🔒 Cross-session access denied!")  # Security enforced
+```
+
+---
+
+## Storage Scopes
+
+**New in v0.5**: Persistent user storage and shared resources alongside ephemeral session files.
+
+CHUK Artifacts supports three storage scopes with different lifecycles and access patterns:
+
+| Scope | Lifecycle | Use Case | Access Control |
+|-------|-----------|----------|----------------|
+| **session** | Ephemeral (15min-24h) | Temporary work files, caches | Session-isolated |
+| **user** | Persistent (long/unlimited) | User's saved files, documents | User-owned |
+| **sandbox** | Shared (long/unlimited) | Templates, shared resources | Read-only (admin writes) |
+
+### Session-Scoped Storage (Default)
+
+Ephemeral files that expire after a short time. Perfect for temporary work files and caches.
+
+```python
+# Default behavior - no changes needed
+file_id = await store.store(
+    data=b"Temporary work file",
+    mime="text/plain",
+    summary="Work in progress",
+    user_id="alice",
+    # scope="session" is default
+    ttl=900  # 15 minutes
+)
+
+# Access requires same session
+data = await store.retrieve(file_id, session_id=session_id)
+```
+
+### User-Scoped Storage (Persistent)
+
+**Persistent files that belong to a user** and survive across all their sessions.
+
+```python
+# Store persistently for user
+document_id = await store.store(
+    data=pdf_bytes,
+    mime="application/pdf",
+    summary="Q4 Sales Report",
+    user_id="alice",
+    scope="user",  # Persists across sessions!
+    ttl=86400 * 365  # 1 year (or None for unlimited)
+)
+
+# Retrieve from any session - just need user_id
+data = await store.retrieve(document_id, user_id="alice")
+
+# Search all user's artifacts
+alice_files = await store.search(user_id="alice", scope="user")
+
+# Filter by MIME type
+alice_pdfs = await store.search(
+    user_id="alice",
+    scope="user",
+    mime_prefix="application/pdf"
+)
+
+# Filter by custom metadata
+q4_docs = await store.search(
+    user_id="alice",
+    scope="user",
+    meta_filter={"quarter": "Q4"}
+)
+```
+
+### Sandbox-Scoped Storage (Shared)
+
+**Shared resources accessible to all users** in the sandbox. Read-only for regular users.
+
+```python
+# Store shared template (admin operation)
+template_id = await store.store(
+    data=template_bytes,
+    mime="image/png",
+    summary="Company logo",
+    scope="sandbox",
+    ttl=None  # No expiry
+)
+
+# Anyone in sandbox can read
+logo_data = await store.retrieve(template_id)  # No user/session needed
+
+# Search shared resources
+templates = await store.search(scope="sandbox")
+```
+
+### Access Control
+
+**Read access:**
+- **Session scope**: Only the owning session
+- **User scope**: Only the owning user (across all sessions)
+- **Sandbox scope**: Anyone in the sandbox
+
+**Write/delete access:**
+- **Session scope**: Only the owning session
+- **User scope**: Only the owning user
+- **Sandbox scope**: Admin operations only (not via regular API)
+
+**Example: Access control in action**
+
+```python
+# Alice stores a private document
+doc_id = await store.store(
+    data=b"Private data",
+    mime="text/plain",
+    summary="Alice's private doc",
+    user_id="alice",
+    scope="user"
+)
+
+# Alice can access it ✅
+data = await store.retrieve(doc_id, user_id="alice")
+
+# Bob cannot access it ❌
+try:
+    data = await store.retrieve(doc_id, user_id="bob")
+except AccessDeniedError:
+    print("Access denied!")
+```
+
+### MCP Server Example with Persistent Storage
+
+```python
+from chuk_artifacts import ArtifactStore
+
+store = ArtifactStore()
+
+# Session 1: User creates a presentation
+deck_id = await store.store(
+    data=pptx_bytes,
+    mime="application/vnd.ms-powerpoint",
+    summary="Q4 Sales Deck",
+    user_id="alice",
+    scope="user",  # Persists beyond session!
+    ttl=None  # No expiry
+)
+
+# Session 2: Different MCP server retrieves and processes
+# (works because it's user-scoped, not session-scoped!)
+deck_data = await store.retrieve(deck_id, user_id="alice")
+video_id = await remotion_server.render(deck_data)
+
+# Session 3: User finds all their work across all sessions
+artifacts = await store.search(user_id="alice", scope="user")
+print(f"Found {len(artifacts)} files")
+```
+
+### Migration from Session-Only Storage
+
+✅ **Backward compatible** - existing code works without changes.
+
+To enable persistent user storage, simply add `scope="user"`:
+
+```python
+# Before (session-scoped, ephemeral)
+file_id = await store.store(data, mime="text/plain", user_id="alice")
+
+# After (user-scoped, persistent)
+file_id = await store.store(
+    data, mime="text/plain",
+    user_id="alice",
+    scope="user",  # Add this line
+    ttl=None  # Optional: no expiry
+)
 ```
 
 ---
@@ -675,7 +852,8 @@ cleaned = await store.cleanup_expired_sessions()
 |-----------|--------------|----------------------|
 | `ArtifactNotFoundError` | Missing or expired artifact | 404 Not Found |
 | `ArtifactExpiredError` | TTL exceeded | 410 Gone |
-| `ArtifactStoreError` | Cross-session access denied | 403 Forbidden |
+| `AccessDeniedError` | Cross-user/session access attempt | 403 Forbidden |
+| `ArtifactStoreError` | Generic store errors | 400 Bad Request |
 | `ProviderError` | S3/COS transient failure | 502/503 Service Unavailable |
 | `SessionError` | Session system error | 500 Internal Server Error |
 
@@ -686,20 +864,23 @@ from chuk_artifacts import (
     ArtifactStoreError,
     ArtifactNotFoundError,
     ArtifactExpiredError,
+    AccessDeniedError,
     ProviderError
 )
 
 try:
-    data = await store.read_file(file_id)
+    data = await store.retrieve(file_id, user_id="alice")
 except ArtifactNotFoundError:
     return {"error": "File not found"}, 404
 except ArtifactExpiredError:
     return {"error": "File has expired"}, 410
+except AccessDeniedError:
+    return {"error": "Access denied"}, 403
 except ProviderError as e:
     logger.error(f"Storage error: {e}")
     return {"error": "Storage unavailable"}, 502
 except ArtifactStoreError as e:
-    return {"error": "Access denied"}, 403
+    return {"error": "Bad request"}, 400
 ```
 
 ---
@@ -827,11 +1008,16 @@ See all examples: [`examples/`](./examples/) ([GitHub](https://github.com/chrish
 ### Unit Tests
 
 ```bash
-# Run full test suite (595 tests)
+# Run full test suite (647 tests)
 uv run pytest tests/ -v
 
-# With coverage report
+# With coverage report (95% coverage)
 uv run pytest tests/ --cov=src/chuk_artifacts --cov-report=term-missing
+
+# Run specific test modules
+uv run pytest tests/test_store.py -v  # Core store tests
+uv run pytest tests/test_access_control.py -v  # Access control tests
+uv run pytest tests/test_grid.py -v  # Grid path tests
 ```
 
 ```python
@@ -982,12 +1168,23 @@ expired = await store.cleanup_expired_sessions()
 
 ## Roadmap
 
+✅ **Phase 1 Complete (v0.5)**:
+- Scope-based storage (session, user, sandbox)
+- Access control with user_id
+- Search functionality for user artifacts
+- 95% test coverage (647 tests)
+
+**Phase 2 (Planned)**:
+- [ ] **Streaming uploads/downloads** - For large files (>100MB)
+- [ ] **Metadata search index** - Elasticsearch/Typesense integration
+- [ ] **Share links** - Temporary shareable URLs with expiry
+- [ ] **User quotas** - Storage limits and usage tracking
+
+**Future Enhancements**:
 - [ ] **GCS backend** - Google Cloud Storage support
 - [ ] **Azure Blob Storage** - Microsoft Azure support
-- [ ] **Content integrity** - SHA-256, Content-MD5, and ETag verification
 - [ ] **Client-side encryption** - Optional end-to-end encryption
 - [ ] **Audit logging** - Detailed access logs for compliance
-- [ ] **Lifecycle policies** - Automated archival and deletion rules
 - [ ] **CDN integration** - CloudFront/Cloudflare integration
 - [ ] **Multi-region** - Automatic replication across regions
 

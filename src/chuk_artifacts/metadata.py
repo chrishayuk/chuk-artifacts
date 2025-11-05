@@ -65,7 +65,7 @@ class MetadataOperations:
 
     async def list_by_session(
         self, session_id: str, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> List[ArtifactMetadata]:
         """List artifacts in a session using grid prefix from chuk_sessions."""
         try:
             artifacts = []

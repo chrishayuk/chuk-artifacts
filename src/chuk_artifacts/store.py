@@ -151,15 +151,53 @@ class ArtifactStore:
         session_id: str | None = None,
         user_id: str | None = None,
         ttl: int = _DEFAULT_TTL,
+        scope: str = "session",  # "session", "user", or "sandbox"
     ) -> str:
-        """Store artifact with mandatory session allocation."""
+        """
+        Store artifact with scope-based storage support.
+
+        Args:
+            data: Artifact data bytes
+            mime: MIME type
+            summary: Human-readable description
+            meta: Optional custom metadata
+            filename: Optional filename
+            session_id: Session ID (auto-allocated if not provided)
+            user_id: User ID (used for session allocation and user scope)
+            ttl: Time-to-live in seconds (default 900 = 15 min)
+            scope: Storage scope - "session" (ephemeral), "user" (persistent), or "sandbox" (shared)
+
+        Returns:
+            Artifact ID
+
+        Examples:
+            >>> # Session-scoped (default, ephemeral)
+            >>> artifact_id = await store.store(data, mime="...", summary="...")
+
+            >>> # User-scoped (persistent across sessions)
+            >>> artifact_id = await store.store(
+            ...     data, mime="...", summary="...",
+            ...     user_id="alice", scope="user", ttl=None
+            ... )
+
+            >>> # Sandbox-scoped (shared by all users)
+            >>> artifact_id = await store.store(
+            ...     data, mime="...", summary="...",
+            ...     scope="sandbox"
+            ... )
+        """
+        # For user-scoped artifacts, user_id is required
+        if scope == "user" and not user_id:
+            raise ValueError("user_id is required for user-scoped artifacts")
+
         # Always allocate/validate session using chuk_sessions
+        # (even for user/sandbox scope, we track which session created it)
         session_id = await self._session_manager.allocate_session(
             session_id=session_id,
             user_id=user_id,
         )
 
-        # Store using core operations
+        # Store using core operations with scope
         return await self._core.store(
             data=data,
             mime=mime,
@@ -168,6 +206,8 @@ class ArtifactStore:
             filename=filename,
             session_id=session_id,
             ttl=ttl,
+            scope=scope,
+            owner_id=user_id if scope == "user" else None,
         )
 
     async def update_file(
@@ -207,8 +247,73 @@ class ArtifactStore:
             ttl=ttl,
         )
 
-    async def retrieve(self, artifact_id: str) -> bytes:
-        """Retrieve artifact data."""
+    async def retrieve(
+        self,
+        artifact_id: str,
+        *,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> bytes:
+        """
+        Retrieve artifact data with optional access control.
+
+        Args:
+            artifact_id: ID of artifact to retrieve
+            user_id: User ID for access control (required for user-scoped artifacts)
+            session_id: Session ID for access control (optional for session-scoped artifacts)
+
+        Returns:
+            Artifact data bytes
+
+        Raises:
+            AccessDeniedError: If access is denied (only for user/sandbox scoped artifacts)
+            ArtifactNotFoundError: If artifact not found
+
+        Examples:
+            >>> # Legacy usage (backward compatible, no access check)
+            >>> data = await store.retrieve(artifact_id)
+
+            >>> # Session-scoped artifact with access control
+            >>> data = await store.retrieve(artifact_id, session_id="sess123")
+
+            >>> # User-scoped artifact
+            >>> data = await store.retrieve(artifact_id, user_id="alice")
+
+            >>> # Sandbox-scoped artifact (anyone in sandbox can read)
+            >>> data = await store.retrieve(artifact_id)
+
+        Note:
+            Access control is enforced for user-scoped and sandbox-scoped artifacts.
+            For session-scoped artifacts (default), access control is only enforced
+            if session_id is explicitly provided (opt-in for new security model).
+        """
+        # Get metadata to check if access control is needed
+        metadata = await self.metadata(artifact_id)
+
+        # Only enforce access control for:
+        # 1. User-scoped artifacts (always)
+        # 2. Sandbox-scoped artifacts (always)
+        # 3. Session-scoped artifacts when session_id is explicitly provided (opt-in)
+        # Handle both ArtifactMetadata objects and dict-style metadata (backward compat)
+        metadata_scope = (
+            getattr(metadata, "scope", None) or metadata.get("scope", "session")
+            if isinstance(metadata, dict)
+            else metadata.scope
+        )
+
+        should_check_access = metadata_scope in ("user", "sandbox") or (
+            metadata_scope == "session" and session_id is not None
+        )
+
+        if should_check_access:
+            from .access_control import check_access, build_context
+
+            context = build_context(
+                user_id=user_id, session_id=session_id, sandbox_id=self.sandbox_id
+            )
+            check_access(metadata, context)
+
+        # Access granted (or no check needed), retrieve data
         return await self._core.retrieve(artifact_id)
 
     async def metadata(self, artifact_id: str) -> ArtifactMetadata:
@@ -219,15 +324,212 @@ class ArtifactStore:
         """Check if artifact exists."""
         return await self._metadata.exists(artifact_id)
 
-    async def delete(self, artifact_id: str) -> bool:
-        """Delete artifact."""
+    async def delete(
+        self,
+        artifact_id: str,
+        *,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Delete artifact with optional access control.
+
+        Args:
+            artifact_id: ID of artifact to delete
+            user_id: User ID for access control (required for user-scoped artifacts)
+            session_id: Session ID for access control (optional for session-scoped artifacts)
+
+        Returns:
+            True if deleted successfully
+
+        Raises:
+            AccessDeniedError: If modification is denied
+            ArtifactNotFoundError: If artifact not found
+
+        Note:
+            Access control is enforced for user-scoped and sandbox-scoped artifacts.
+            For session-scoped artifacts (default), access control is only enforced
+            if session_id is explicitly provided (opt-in for new security model).
+            Sandbox-scoped artifacts cannot be deleted via this method - use admin
+            endpoints for sandbox artifact management.
+        """
+        # Get metadata to check if access control is needed
+        metadata = await self.metadata(artifact_id)
+
+        # Only enforce access control for:
+        # 1. User-scoped artifacts (always)
+        # 2. Sandbox-scoped artifacts (always)
+        # 3. Session-scoped artifacts when session_id is explicitly provided (opt-in)
+        # Handle both ArtifactMetadata objects and dict-style metadata (backward compat)
+        metadata_scope = (
+            getattr(metadata, "scope", None) or metadata.get("scope", "session")
+            if isinstance(metadata, dict)
+            else metadata.scope
+        )
+
+        should_check_access = metadata_scope in ("user", "sandbox") or (
+            metadata_scope == "session" and session_id is not None
+        )
+
+        if should_check_access:
+            from .access_control import can_modify, build_context
+
+            context = build_context(
+                user_id=user_id, session_id=session_id, sandbox_id=self.sandbox_id
+            )
+
+            # Check modification permission
+            if not can_modify(metadata, context):
+                from .exceptions import AccessDeniedError
+
+                owner_id = (
+                    getattr(metadata, "owner_id", None) or metadata.get("owner_id")
+                    if isinstance(metadata, dict)
+                    else None
+                )
+                session_id_from_meta = (
+                    getattr(metadata, "session_id", None) or metadata.get("session_id")
+                    if isinstance(metadata, dict)
+                    else None
+                )
+                raise AccessDeniedError(
+                    f"Cannot delete artifact {artifact_id}: insufficient permissions. "
+                    f"Scope: {metadata_scope}, Owner: {owner_id or session_id_from_meta}"
+                )
+
+        # Permission granted (or no check needed), delete
         return await self._metadata.delete(artifact_id)
 
     async def list_by_session(
         self, session_id: str, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> List[ArtifactMetadata]:
         """List artifacts in session."""
         return await self._metadata.list_by_session(session_id, limit)
+
+    async def search(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        scope: Optional[str] = None,
+        mime_prefix: Optional[str] = None,
+        meta_filter: Optional[Dict[str, Any]] = None,
+        limit: int = 100,
+    ) -> List[ArtifactMetadata]:
+        """
+        Search artifacts by scope, user, MIME type, and metadata.
+
+        This is useful for finding user artifacts across all sessions, or searching
+        within specific scopes.
+
+        Args:
+            user_id: Filter by owner (user-scoped artifacts only)
+            scope: Filter by scope ("session", "user", or "sandbox")
+            mime_prefix: Filter by MIME type prefix (e.g., "image/" for all images)
+            meta_filter: Filter by custom metadata (exact match)
+            limit: Maximum number of results
+
+        Returns:
+            List of matching artifacts
+
+        Examples:
+            >>> # Find all user's artifacts across sessions
+            >>> artifacts = await store.search(user_id="alice", scope="user")
+
+            >>> # Find all images for a user
+            >>> images = await store.search(
+            ...     user_id="alice",
+            ...     scope="user",
+            ...     mime_prefix="image/"
+            ... )
+
+            >>> # Find by custom metadata
+            >>> artifacts = await store.search(
+            ...     user_id="alice",
+            ...     meta_filter={"project": "Q4-deck"}
+            ... )
+
+        Note:
+            This method requires iterating through storage keys. For large datasets,
+            consider using a proper search index (Elasticsearch, Typesense, etc.).
+        """
+        results = []
+
+        try:
+            # Build prefix based on scope and user
+            if scope == "user" and user_id:
+                prefix = f"grid/{self.sandbox_id}/users/{user_id}/"
+            elif scope == "session":
+                # Can't search all sessions efficiently without index
+                logger.warning(
+                    "Searching session scope requires session_id, use list_by_session() instead"
+                )
+                return []
+            elif scope == "sandbox":
+                prefix = f"grid/{self.sandbox_id}/shared/"
+            elif user_id:
+                # Search user artifacts specifically
+                prefix = f"grid/{self.sandbox_id}/users/{user_id}/"
+            else:
+                # Search entire sandbox (expensive!)
+                prefix = f"grid/{self.sandbox_id}/"
+
+            storage_ctx_mgr = self._s3_factory()
+            async with storage_ctx_mgr as s3:
+                if not hasattr(s3, "list_objects_v2"):
+                    logger.warning("Storage provider doesn't support listing")
+                    return []
+
+                response = await s3.list_objects_v2(
+                    Bucket=self.bucket,
+                    Prefix=prefix,
+                    MaxKeys=limit * 2,  # Get more to account for filtering
+                )
+
+                for obj in response.get("Contents", []):
+                    key = obj["Key"]
+                    parsed = self.parse_grid_key(key)
+
+                    if not parsed:
+                        continue
+
+                    artifact_id = parsed.artifact_id
+
+                    try:
+                        metadata = await self.metadata(artifact_id)
+
+                        # Apply filters
+                        if scope and metadata.scope != scope:
+                            continue
+
+                        if user_id and metadata.owner_id != user_id:
+                            continue
+
+                        if mime_prefix and not metadata.mime.startswith(mime_prefix):
+                            continue
+
+                        if meta_filter:
+                            # Check if all filter items match
+                            matches = all(
+                                metadata.meta.get(k) == v
+                                for k, v in meta_filter.items()
+                            )
+                            if not matches:
+                                continue
+
+                        results.append(metadata)
+
+                        if len(results) >= limit:
+                            break
+
+                    except Exception as e:
+                        logger.debug(f"Skipping artifact {artifact_id}: {e}")
+                        continue
+
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            raise ProviderError(f"Search operation failed: {e}") from e
+
+        return results
 
     # ─────────────────────────────────────────────────────────────────
     # Session operations - now delegated to chuk_sessions

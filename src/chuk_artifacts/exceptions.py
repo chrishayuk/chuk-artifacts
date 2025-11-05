@@ -41,3 +41,9 @@ class SessionError(ArtifactStoreError):
     """Raised when the session provider encounters an error."""
 
     pass
+
+
+class AccessDeniedError(ArtifactStoreError):
+    """Raised when access to an artifact is denied due to permission restrictions."""
+
+    pass

@@ -47,16 +47,28 @@ class CoreStorageOperations:
         filename: str | None = None,
         session_id: str,  # Required - no more optional sessions
         ttl: int = _DEFAULT_TTL,
+        scope: str = "session",  # "session", "user", or "sandbox"
+        owner_id: str | None = None,  # user_id for user-scoped artifacts
     ) -> str:
-        """Store artifact with grid key generation."""
+        """Store artifact with grid key generation and scope support."""
         if self.artifact_store._closed:
             raise ArtifactStoreError("Store is closed")
 
         start_time = time.time()
         artifact_id = uuid.uuid4().hex
 
-        # Generate grid key using chuk_sessions
-        key = self.artifact_store.generate_artifact_key(session_id, artifact_id)
+        # Generate grid key based on scope (uses new format by default)
+        from .grid import artifact_key
+
+        key = artifact_key(
+            sandbox_id=self.artifact_store.sandbox_id,
+            session_id=session_id,
+            artifact_id=artifact_id,
+            scope=scope,
+            owner_id=owner_id,
+            # use_legacy_session_format defaults to False (new format)
+            # parse() handles reading both legacy and new formats
+        )
 
         try:
             # Store in object storage
@@ -78,6 +90,8 @@ class CoreStorageOperations:
                 ttl=ttl,
                 storage_provider=self.artifact_store._storage_provider_name,
                 session_provider=self.artifact_store._session_provider_name,
+                scope=scope,
+                owner_id=owner_id,
             )
 
             # Store metadata

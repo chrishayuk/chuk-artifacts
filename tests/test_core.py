@@ -77,9 +77,8 @@ class TestStore:
         self, core_operations, mock_artifact_store, sample_artifact_data
     ):
         """Test successful artifact storage."""
-        # Mock artifact key generation
-        test_key = "grid/test-sandbox/test-session-123/abc123"
-        mock_artifact_store.generate_artifact_key.return_value = test_key
+        # Expected key with new scoped format
+        test_key = "grid/test-sandbox/sessions/test-session-123/abc123def456"
 
         # Mock storage operations
         mock_s3 = AsyncMock()

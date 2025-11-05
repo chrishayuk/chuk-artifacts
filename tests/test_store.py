@@ -180,7 +180,7 @@ class TestCoreOperations:
             session_id="provided-session", user_id="user-123"
         )
 
-        # Verify core store call
+        # Verify core store call (includes new scope and owner_id parameters)
         mock_core_ops.store.assert_called_once_with(
             data=data,
             mime=mime,
@@ -189,6 +189,8 @@ class TestCoreOperations:
             filename=None,
             session_id="session-123",
             ttl=_DEFAULT_TTL,
+            scope="session",  # Default scope
+            owner_id=None,  # No owner_id for session scope
         )
 
         assert result == "artifact-456"
@@ -221,7 +223,7 @@ class TestCoreOperations:
             ttl=3600,
         )
 
-        # Verify core store call
+        # Verify core store call (includes new scope and owner_id parameters)
         mock_core_ops.store.assert_called_once_with(
             data=data,
             mime=mime,
@@ -230,16 +232,37 @@ class TestCoreOperations:
             filename=filename,
             session_id="session-123",
             ttl=3600,
+            scope="session",  # Default scope
+            owner_id=None,  # No owner_id for session scope
         )
 
         assert result == "artifact-456"
 
     @pytest.mark.asyncio
-    async def test_retrieve(self, store, mock_core_ops):
+    async def test_retrieve(self, store, mock_core_ops, mock_metadata_ops):
         """Test artifact retrieval."""
-        # Setup mock
+        # Setup mocks
         expected_data = b"retrieved content"
         mock_core_ops.retrieve.return_value = expected_data
+
+        # Mock metadata to return session-scoped artifact (no access control by default)
+        from chuk_artifacts.models import ArtifactMetadata
+
+        mock_metadata = ArtifactMetadata(
+            artifact_id="artifact-123",
+            session_id="test-session",
+            sandbox_id="test-sandbox",
+            key="grid/test-sandbox/test-session/artifact-123",
+            mime="application/octet-stream",
+            summary="Test",
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+            scope="session",  # Session scope - no access control enforcement without session_id param
+        )
+        mock_metadata_ops.get_metadata.return_value = mock_metadata
 
         # Call retrieve
         result = await store.retrieve("artifact-123")
@@ -1033,8 +1056,9 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_retrieve_nonexistent_artifact(self, store):
         """Test retrieving non-existent artifact."""
-        with patch.object(store._core, "retrieve") as mock_retrieve:
-            mock_retrieve.side_effect = ArtifactStoreError("Artifact not found")
+        # Since retrieve() now calls metadata() first, we need to mock that too
+        with patch.object(store._metadata, "get_metadata") as mock_metadata:
+            mock_metadata.side_effect = ArtifactStoreError("Artifact not found")
 
             with pytest.raises(ArtifactStoreError, match="Artifact not found"):
                 await store.retrieve("nonexistent-artifact")
