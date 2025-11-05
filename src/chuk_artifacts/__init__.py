@@ -13,7 +13,15 @@ from dotenv import load_dotenv
 
 # Core classes
 from .store import ArtifactStore
-from .models import ArtifactEnvelope, AccessContext
+from .models import (
+    ArtifactEnvelope,
+    AccessContext,
+    StreamUploadRequest,
+    StreamDownloadRequest,
+    MultipartUploadInitRequest,
+    MultipartUploadCompleteRequest,
+    MultipartUploadPart,
+)
 
 # Exception classes
 from .exceptions import (
@@ -47,6 +55,11 @@ __all__ = [
     # Models
     "ArtifactEnvelope",
     "AccessContext",
+    "StreamUploadRequest",
+    "StreamDownloadRequest",
+    "MultipartUploadInitRequest",
+    "MultipartUploadCompleteRequest",
+    "MultipartUploadPart",
     # Exceptions
     "ArtifactStoreError",
     "ArtifactNotFoundError",

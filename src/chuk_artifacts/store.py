@@ -16,11 +16,27 @@ import os
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Callable, AsyncContextManager, Optional, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Callable,
+    AsyncContextManager,
+    Optional,
+    Union,
+    AsyncIterator,
+)
 from importlib.util import find_spec
 from chuk_sessions.session_manager import SessionManager
 from .grid import canonical_prefix, artifact_key, parse
-from .models import ArtifactMetadata, GridKeyComponents
+from .models import (
+    ArtifactMetadata,
+    GridKeyComponents,
+    StreamUploadRequest,
+    StreamDownloadRequest,
+    MultipartUploadInitRequest,
+    MultipartUploadCompleteRequest,
+)
 
 # Check for required dependencies
 if not find_spec("aioboto3"):
@@ -315,6 +331,156 @@ class ArtifactStore:
 
         # Access granted (or no check needed), retrieve data
         return await self._core.retrieve(artifact_id)
+
+    async def stream_upload(self, request: StreamUploadRequest) -> str:
+        """
+        Stream upload large artifact with progress tracking.
+
+        Supports streaming uploads for large files (videos, datasets, etc.) with
+        optional progress callbacks to track upload status.
+
+        Args:
+            request: StreamUploadRequest containing all upload parameters
+
+        Returns:
+            Artifact ID
+
+        Examples:
+            >>> # Basic streaming upload
+            >>> async def file_chunks():
+            ...     with open("large_video.mp4", "rb") as f:
+            ...         while chunk := f.read(65536):  # 64KB chunks
+            ...             yield chunk
+            >>>
+            >>> request = StreamUploadRequest(
+            ...     data_stream=file_chunks(),
+            ...     mime="video/mp4",
+            ...     summary="Large video file",
+            ...     filename="video.mp4",
+            ...     user_id="alice",
+            ...     content_length=1024*1024*100  # 100MB
+            ... )
+            >>> artifact_id = await store.stream_upload(request)
+
+            >>> # With progress callback
+            >>> def progress(bytes_sent, total_bytes):
+            ...     if total_bytes:
+            ...         pct = (bytes_sent / total_bytes) * 100
+            ...         print(f"Upload: {pct:.1f}% ({bytes_sent}/{total_bytes})")
+            >>>
+            >>> request = StreamUploadRequest(
+            ...     data_stream=file_chunks(),
+            ...     mime="video/mp4",
+            ...     summary="Video with progress",
+            ...     progress_callback=progress,
+            ...     content_length=file_size
+            ... )
+            >>> artifact_id = await store.stream_upload(request)
+        """
+        # For user-scoped artifacts, user_id is required
+        if request.scope == "user" and not request.user_id:
+            raise ValueError("user_id is required for user-scoped artifacts")
+
+        # Allocate/validate session
+        session_id = await self._session_manager.allocate_session(
+            session_id=request.session_id,
+            user_id=request.user_id,
+        )
+
+        # Stream upload using core operations
+        return await self._core.stream_upload(
+            data_stream=request.data_stream,
+            mime=request.mime,
+            summary=request.summary,
+            meta=request.meta,
+            filename=request.filename,
+            session_id=session_id,
+            ttl=request.ttl,
+            scope=request.scope,
+            owner_id=request.user_id if request.scope == "user" else None,
+            content_length=request.content_length,
+            progress_callback=request.progress_callback,
+        )
+
+    async def stream_download(
+        self, request: StreamDownloadRequest
+    ) -> AsyncIterator[bytes]:
+        """
+        Stream download artifact data with progress tracking.
+
+        Supports streaming downloads for large files with optional progress
+        callbacks to track download status.
+
+        Args:
+            request: StreamDownloadRequest containing all download parameters
+
+        Yields:
+            Bytes chunks
+
+        Examples:
+            >>> # Basic streaming download
+            >>> request = StreamDownloadRequest(
+            ...     artifact_id="abc123",
+            ...     chunk_size=65536  # 64KB chunks
+            ... )
+            >>> async for chunk in store.stream_download(request):
+            ...     # Process chunk (write to file, network, etc.)
+            ...     await output_file.write(chunk)
+
+            >>> # With progress callback
+            >>> def progress(bytes_received, total_bytes):
+            ...     if total_bytes:
+            ...         pct = (bytes_received / total_bytes) * 100
+            ...         print(f"Download: {pct:.1f}%")
+            >>>
+            >>> request = StreamDownloadRequest(
+            ...     artifact_id="abc123",
+            ...     progress_callback=progress,
+            ...     user_id="alice"  # For access control
+            ... )
+            >>> async for chunk in store.stream_download(request):
+            ...     process_chunk(chunk)
+
+            >>> # User-scoped artifact with access control
+            >>> request = StreamDownloadRequest(
+            ...     artifact_id="user-doc-123",
+            ...     user_id="alice",
+            ...     chunk_size=131072  # 128KB chunks
+            ... )
+            >>> async for chunk in store.stream_download(request):
+            ...     await save_chunk(chunk)
+        """
+        # Get metadata to check if access control is needed
+        metadata = await self.metadata(request.artifact_id)
+
+        # Enforce access control (same logic as retrieve)
+        metadata_scope = (
+            getattr(metadata, "scope", None) or metadata.get("scope", "session")
+            if isinstance(metadata, dict)
+            else metadata.scope
+        )
+
+        should_check_access = metadata_scope in ("user", "sandbox") or (
+            metadata_scope == "session" and request.session_id is not None
+        )
+
+        if should_check_access:
+            from .access_control import check_access, build_context
+
+            context = build_context(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                sandbox_id=self.sandbox_id,
+            )
+            check_access(metadata, context)
+
+        # Access granted, stream download
+        async for chunk in self._core.stream_download(
+            artifact_id=request.artifact_id,
+            chunk_size=request.chunk_size,
+            progress_callback=request.progress_callback,
+        ):
+            yield chunk
 
     async def metadata(self, artifact_id: str) -> ArtifactMetadata:
         """Get artifact metadata."""
@@ -825,6 +991,129 @@ class ArtifactStore:
             ttl=ttl,
             expires=expires,
         )
+
+    # ─────────────────────────────────────────────────────────────────
+    # Multipart upload operations
+    # ─────────────────────────────────────────────────────────────────
+
+    async def initiate_multipart_upload(
+        self,
+        request: MultipartUploadInitRequest,
+    ) -> Dict[str, Any]:
+        """
+        Initiate a multipart upload for large files (>5MB).
+
+        Multipart uploads enable efficient uploading of large files in chunks.
+        Ideal for videos, datasets, and media workflows.
+
+        Workflow:
+            1. Call initiate_multipart_upload() to get upload_id
+            2. Get presigned URLs for each part with get_part_upload_url()
+            3. Client uploads each part (minimum 5MB except last part)
+            4. Call complete_multipart_upload() with part ETags
+
+        Args:
+            request: MultipartUploadInitRequest with all upload parameters
+
+        Returns:
+            Dictionary with upload_id, artifact_id, key, session_id
+
+        Examples:
+            >>> # Step 1: Initiate
+            >>> request = MultipartUploadInitRequest(
+            ...     filename="video.mp4",
+            ...     mime_type="video/mp4",
+            ...     user_id="alice"
+            ... )
+            >>> info = await store.initiate_multipart_upload(request)
+            >>> upload_id = info["upload_id"]
+            >>>
+            >>> # Step 2: Get part URLs (client uploads each part)
+            >>> for part_num in range(1, num_parts + 1):
+            ...     url = await store.get_part_upload_url(upload_id, part_num)
+            ...     # Client uploads part to URL
+            >>>
+            >>> # Step 3: Complete
+            >>> complete_request = MultipartUploadCompleteRequest(
+            ...     upload_id=upload_id,
+            ...     parts=[MultipartUploadPart(PartNumber=1, ETag="...")]
+            ... )
+            >>> artifact_id = await store.complete_multipart_upload(complete_request)
+        """
+        return await self._presigned.initiate_multipart_upload(request)
+
+    async def get_part_upload_url(
+        self,
+        upload_id: str,
+        part_number: int,
+        expires: int = _DEFAULT_PRESIGN_EXPIRES,
+    ) -> str:
+        """
+        Get presigned URL for uploading a specific part.
+
+        Part numbers must be sequential (1-10,000).
+        Minimum part size: 5MB (except last part).
+
+        Args:
+            upload_id: Upload ID from initiate_multipart_upload()
+            part_number: Part number (1-10000)
+            expires: URL expiration in seconds (default 1 hour)
+
+        Returns:
+            Presigned PUT URL for the part
+
+        Example:
+            >>> url = await store.get_part_upload_url(upload_id, part_number=1)
+            >>> # Client uploads: curl -X PUT -T part1.bin "$url"
+        """
+        return await self._presigned.get_part_upload_url(
+            upload_id, part_number, expires
+        )
+
+    async def complete_multipart_upload(
+        self,
+        request: MultipartUploadCompleteRequest,
+    ) -> str:
+        """
+        Complete a multipart upload and register the artifact.
+
+        Args:
+            request: MultipartUploadCompleteRequest with upload_id, parts, and summary
+
+        Returns:
+            artifact_id of the completed upload
+
+        Examples:
+            >>> # Complete with Pydantic model
+            >>> request = MultipartUploadCompleteRequest(
+            ...     upload_id=upload_id,
+            ...     parts=[
+            ...         MultipartUploadPart(PartNumber=1, ETag="abc123..."),
+            ...         MultipartUploadPart(PartNumber=2, ETag="def456..."),
+            ...     ],
+            ...     summary="Large video upload"
+            ... )
+            >>> artifact_id = await store.complete_multipart_upload(request)
+        """
+        return await self._presigned.complete_multipart_upload(request)
+
+    async def abort_multipart_upload(self, upload_id: str) -> bool:
+        """
+        Abort an incomplete multipart upload and clean up resources.
+
+        Use this to cancel uploads that won't complete or to clean up
+        after errors.
+
+        Args:
+            upload_id: Upload ID from initiate_multipart_upload()
+
+        Returns:
+            True if aborted successfully
+
+        Example:
+            >>> success = await store.abort_multipart_upload(upload_id)
+        """
+        return await self._presigned.abort_multipart_upload(upload_id)
 
     # ─────────────────────────────────────────────────────────────────
     # Batch operations

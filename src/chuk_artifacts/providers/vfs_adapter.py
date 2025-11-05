@@ -13,7 +13,7 @@ import time
 import uuid
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Callable, AsyncContextManager, Optional
+from typing import Any, Dict, Callable, AsyncContextManager, Optional, AsyncIterator
 
 from chuk_virtual_fs import AsyncVirtualFileSystem
 
@@ -141,6 +141,126 @@ class VFSAdapter:
             "LastModified": metadata.get("modified_at", time.time()),
         }
 
+    async def put_object_stream(
+        self,
+        *,
+        Bucket: str,  # noqa: N803
+        Key: str,  # noqa: N803
+        Body: AsyncIterator[bytes],  # noqa: N803
+        ContentType: str,  # noqa: N803
+        Metadata: Dict[str, str],  # noqa: N803
+        ContentLength: Optional[int] = None,  # noqa: N803
+        ProgressCallback: Optional[Callable[[int, Optional[int]], None]] = None,  # noqa: N803
+    ):
+        """Stream upload object using VFS write_stream."""
+        if self._closed:
+            raise RuntimeError("Client has been closed")
+
+        # Construct VFS path: /{bucket}/{key}
+        vfs_path = f"/{Bucket}/{Key}"
+
+        # Ensure bucket (parent directory) exists
+        bucket_path = f"/{Bucket}"
+        if not await self.vfs.exists(bucket_path):
+            await self.vfs.mkdir(bucket_path)
+
+        # Handle nested keys (create parent directories)
+        key_parts = Key.rsplit("/", 1)
+        if len(key_parts) > 1:
+            parent_key = key_parts[0]
+            path_parts = parent_key.split("/")
+            current_path = f"/{Bucket}"
+            for part in path_parts:
+                current_path = f"{current_path}/{part}"
+                if not await self.vfs.exists(current_path):
+                    await self.vfs.mkdir(current_path)
+
+        # Prepare metadata in VFS format
+        metadata = {
+            "mime_type": ContentType,
+            "custom_meta": {
+                **Metadata,
+                "s3_content_type": ContentType,
+                "s3_metadata": Metadata,
+            },
+        }
+
+        # Write using VFS streaming
+        if hasattr(self.vfs, "write_stream"):
+            # VFS supports streaming - use it
+            bytes_written = await self.vfs.write_stream(
+                vfs_path, Body, progress_callback=ProgressCallback, **metadata
+            )
+        else:
+            # Fallback: collect all chunks and write
+            chunks = []
+            bytes_written = 0
+            async for chunk in Body:
+                chunks.append(chunk)
+                bytes_written += len(chunk)
+                if ProgressCallback:
+                    ProgressCallback(bytes_written, ContentLength)
+
+            data = b"".join(chunks)
+            await self.vfs.write_binary(vfs_path, data, **metadata)
+
+        # Return S3-like response
+        return {
+            "ResponseMetadata": {"HTTPStatusCode": 200},
+            "ETag": f'"{uuid.uuid4().hex}"',  # Generate unique ETag
+            "ContentLength": bytes_written,
+        }
+
+    async def get_object_stream(
+        self,
+        *,
+        Bucket: str,  # noqa: N803
+        Key: str,  # noqa: N803
+        ChunkSize: int = 65536,  # noqa: N803 - 64KB default
+        ProgressCallback: Optional[Callable[[int, Optional[int]], None]] = None,  # noqa: N803
+    ) -> AsyncIterator[bytes]:
+        """Stream download object using VFS read_stream."""
+        if self._closed:
+            raise RuntimeError("Client has been closed")
+
+        # Construct VFS path
+        vfs_path = f"/{Bucket}/{Key}"
+
+        # Check if exists
+        if not await self.vfs.exists(vfs_path):
+            error = {
+                "Error": {
+                    "Code": "NoSuchKey",
+                    "Message": "The specified key does not exist.",
+                    "Key": Key,
+                    "BucketName": Bucket,
+                }
+            }
+            raise Exception(f"NoSuchKey: {error}")
+
+        # Get file size for progress reporting
+        metadata = await self.vfs.get_metadata(vfs_path)
+        total_size = metadata.get("size", None)
+        bytes_read = 0
+
+        # Stream using VFS if available
+        if hasattr(self.vfs, "read_stream"):
+            # VFS supports streaming - use it
+            async for chunk in self.vfs.read_stream(vfs_path, chunk_size=ChunkSize):
+                bytes_read += len(chunk)
+                if ProgressCallback:
+                    ProgressCallback(bytes_read, total_size)
+                yield chunk
+        else:
+            # Fallback: read entire file and chunk it
+            data = await self.vfs.read_binary(vfs_path)
+            for i in range(0, len(data), ChunkSize):
+                chunk = data[i : i + ChunkSize]
+                bytes_read += len(chunk)
+                if ProgressCallback:
+                    ProgressCallback(bytes_read, total_size)
+                yield chunk
+
     async def head_object(
         self,
         *,
@@ -216,7 +336,9 @@ class VFSAdapter:
                 )
 
         # Fallback: Generate fake presigned URL for non-S3 providers
-        if not await self.vfs.exists(vfs_path):
+        # For upload operations (put_object, upload_part), object doesn't exist yet
+        # Only check existence for download operations (get_object)
+        if operation == "get_object" and not await self.vfs.exists(vfs_path):
             raise FileNotFoundError(f"Object not found: {vfs_path}")
 
         return (

@@ -533,3 +533,51 @@ class TestVFSAdapterEdgeCases:
             response = await client.list_objects_v2(Bucket="test-bucket", MaxKeys=5)
             assert response["KeyCount"] == 5
             assert response["IsTruncated"] is True
+
+
+class TestVFSAdapterStreamingOperations:
+    """Test streaming operations in VFS adapter"""
+
+    @pytest.mark.asyncio
+    async def test_streaming_operations_after_close(self):
+        """Test that streaming methods raise error after close"""
+        factory_fn = factory(provider="memory", shared_key="test_stream_after_close")
+        async with factory_fn() as client:
+            # Store some data first
+            await client.put_object(
+                Bucket="test-bucket",
+                Key="test-key",
+                Body=b"test data",
+                ContentType="text/plain",
+                Metadata={},
+            )
+
+        # Client is now closed after exiting context manager
+
+        # Try to use put_object_stream after close
+        async def data_gen():
+            yield b"more data"
+
+        with pytest.raises(RuntimeError, match="Client has been closed"):
+            await client.put_object_stream(
+                Bucket="test-bucket",
+                Key="test-key2",
+                Body=data_gen(),
+                ContentType="text/plain",
+                Metadata={},
+            )
+
+        # Try to use get_object_stream after close
+        with pytest.raises(RuntimeError, match="Client has been closed"):
+            async for _ in client.get_object_stream(
+                Bucket="test-bucket",
+                Key="test-key",
+            ):
+                pass
+
+        # Try regular get_object after close as well
+        with pytest.raises(RuntimeError, match="Client has been closed"):
+            await client.get_object(
+                Bucket="test-bucket",
+                Key="test-key",
+            )

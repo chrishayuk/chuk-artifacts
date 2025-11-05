@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/models.py
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Dict, Optional, Literal, AsyncIterator, Callable
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
@@ -199,3 +199,134 @@ class AccessContext(BaseModel):
     sandbox_id: str = Field(description="Sandbox ID (must match artifact's sandbox)")
 
     model_config = ConfigDict(frozen=True)  # Immutable for security
+
+
+class StreamUploadRequest(BaseModel):
+    """
+    Parameters for streaming upload operations.
+
+    Defines all parameters needed to perform a streaming upload with optional
+    progress tracking.
+    """
+
+    data_stream: AsyncIterator[bytes] = Field(
+        description="Async iterator yielding bytes chunks"
+    )
+    mime: str = Field(min_length=1, description="MIME type (e.g., 'video/mp4')")
+    summary: str = Field(description="Human-readable description")
+    meta: Optional[Dict[str, Any]] = Field(None, description="Optional custom metadata")
+    filename: Optional[str] = Field(None, description="Optional filename")
+    session_id: Optional[str] = Field(
+        None, description="Session ID (auto-allocated if not provided)"
+    )
+    user_id: Optional[str] = Field(
+        None, description="User ID (used for session allocation and user scope)"
+    )
+    ttl: int = Field(default=900, gt=0, description="Time-to-live in seconds")
+    scope: Literal["session", "user", "sandbox"] = Field(
+        default="session",
+        description="Storage scope: session (ephemeral), user (persistent), or sandbox (shared)",
+    )
+    content_length: Optional[int] = Field(
+        None, description="Total content length in bytes (if known)"
+    )
+    progress_callback: Optional[Callable[[int, Optional[int]], None]] = Field(
+        None, description="Callback function (bytes_processed, total_bytes)"
+    )
+    chunk_size: int = Field(
+        default=65536, gt=0, description="Chunk size for reading (64KB default)"
+    )
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class StreamDownloadRequest(BaseModel):
+    """
+    Parameters for streaming download operations.
+
+    Defines all parameters needed to perform a streaming download with optional
+    progress tracking.
+    """
+
+    artifact_id: str = Field(min_length=1, description="ID of artifact to download")
+    user_id: Optional[str] = Field(
+        None,
+        description="User ID for access control (required for user-scoped artifacts)",
+    )
+    session_id: Optional[str] = Field(
+        None,
+        description="Session ID for access control (optional for session-scoped artifacts)",
+    )
+    chunk_size: int = Field(
+        default=65536, gt=0, description="Chunk size for streaming (64KB default)"
+    )
+    progress_callback: Optional[Callable[[int, Optional[int]], None]] = Field(
+        None, description="Callback function (bytes_processed, total_bytes)"
+    )
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class MultipartUploadInitRequest(BaseModel):
+    """
+    Parameters for initiating a multipart upload.
+
+    Multipart uploads are ideal for large files (>5MB). The workflow:
+    1. Initiate upload to get upload_id
+    2. Upload parts (minimum 5MB except last part)
+    3. Complete upload with part ETags
+
+    Maximum: 10,000 parts per upload.
+    """
+
+    filename: str = Field(min_length=1, description="Name of file being uploaded")
+    mime_type: str = Field(
+        default="application/octet-stream", description="MIME type (e.g., 'video/mp4')"
+    )
+    user_id: Optional[str] = Field(
+        default=None, description="User ID (for auto-generated session)"
+    )
+    session_id: Optional[str] = Field(default=None, description="Explicit session ID")
+    scope: Literal["session", "user", "sandbox"] = Field(
+        default="session",
+        description="Storage scope: session (ephemeral), user (persistent), or sandbox (shared)",
+    )
+    ttl: int = Field(default=900, gt=0, description="Time-to-live in seconds")
+    meta: Optional[Dict[str, Any]] = Field(
+        default=None, description="Optional custom metadata"
+    )
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class MultipartUploadPart(BaseModel):
+    """
+    Represents an uploaded part in a multipart upload.
+
+    After uploading each part via presigned URL, the ETag from the
+    response headers must be collected and provided to complete the upload.
+    """
+
+    PartNumber: int = Field(ge=1, le=10000, description="Part number (1-10000)")
+    ETag: str = Field(min_length=1, description="ETag from upload response headers")
+
+    model_config = ConfigDict(frozen=True)  # Immutable once created
+
+
+class MultipartUploadCompleteRequest(BaseModel):
+    """
+    Parameters for completing a multipart upload.
+
+    After all parts have been uploaded, provide the list of parts
+    with their ETags to finalize the upload.
+    """
+
+    upload_id: str = Field(min_length=1, description="Upload ID from initiate")
+    parts: list[MultipartUploadPart] = Field(
+        min_length=1, description="List of uploaded parts with ETags"
+    )
+    summary: str = Field(
+        default="Multipart upload", description="Human-readable description"
+    )
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
