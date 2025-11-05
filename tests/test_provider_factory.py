@@ -69,6 +69,70 @@ class TestProviderFactoryBuiltins:
             assert callable(factory)
 
 
+class TestProviderFactoryVFSProviders:
+    """Test VFS-backed provider resolution."""
+
+    @pytest.mark.parametrize("provider_name", ["vfs", "vfs-memory", "vfs_memory"])
+    def test_vfs_memory_provider_variants(self, provider_name):
+        """Test VFS memory provider name variants."""
+        with patch.dict(os.environ, {"ARTIFACT_PROVIDER": provider_name}):
+            factory = factory_for_env()
+            assert callable(factory)
+
+    @pytest.mark.parametrize(
+        "provider_name", ["vfs-filesystem", "vfs_filesystem", "vfs-fs", "vfs_fs"]
+    )
+    def test_vfs_filesystem_provider_variants(self, provider_name):
+        """Test VFS filesystem provider name variants."""
+        with patch.dict(os.environ, {"ARTIFACT_PROVIDER": provider_name}):
+            factory = factory_for_env()
+            assert callable(factory)
+
+    @pytest.mark.parametrize("provider_name", ["vfs-s3", "vfs_s3"])
+    def test_vfs_s3_provider_variants(self, provider_name):
+        """Test VFS S3 provider name variants."""
+        with patch.dict(os.environ, {"ARTIFACT_PROVIDER": provider_name}):
+            factory = factory_for_env()
+            assert callable(factory)
+
+    @pytest.mark.parametrize("provider_name", ["vfs-sqlite", "vfs_sqlite"])
+    def test_vfs_sqlite_provider_variants(self, provider_name):
+        """Test VFS SQLite provider name variants."""
+        with patch.dict(os.environ, {"ARTIFACT_PROVIDER": provider_name}):
+            factory = factory_for_env()
+            assert callable(factory)
+
+    def test_vfs_filesystem_with_custom_root(self):
+        """Test VFS filesystem provider respects ARTIFACT_FS_ROOT."""
+        with patch.dict(
+            os.environ,
+            {"ARTIFACT_PROVIDER": "vfs-filesystem", "ARTIFACT_FS_ROOT": "/custom/path"},
+        ):
+            factory = factory_for_env()
+            assert callable(factory)
+
+    def test_vfs_s3_with_custom_bucket(self):
+        """Test VFS S3 provider respects ARTIFACT_BUCKET."""
+        with patch.dict(
+            os.environ,
+            {"ARTIFACT_PROVIDER": "vfs-s3", "ARTIFACT_BUCKET": "my-custom-bucket"},
+        ):
+            factory = factory_for_env()
+            assert callable(factory)
+
+    def test_vfs_sqlite_with_custom_db_path(self):
+        """Test VFS SQLite provider respects ARTIFACT_SQLITE_PATH."""
+        with patch.dict(
+            os.environ,
+            {
+                "ARTIFACT_PROVIDER": "vfs-sqlite",
+                "ARTIFACT_SQLITE_PATH": "/custom/db.sqlite",
+            },
+        ):
+            factory = factory_for_env()
+            assert callable(factory)
+
+
 class TestProviderFactoryDynamicLookup:
     """Test dynamic provider lookup and error handling."""
 
@@ -81,9 +145,10 @@ class TestProviderFactoryDynamicLookup:
             assert "Unknown storage provider 'nonexistent_provider'" in str(
                 exc_info.value
             )
-            assert "Available providers: memory, filesystem, s3, ibm_cos" in str(
-                exc_info.value
-            )
+            # Should list both legacy and VFS providers
+            assert "Available providers:" in str(exc_info.value)
+            assert "memory" in str(exc_info.value)
+            assert "vfs" in str(exc_info.value)
 
     @patch("chuk_artifacts.provider_factory.import_module")
     def test_dynamic_provider_without_factory_function(self, mock_import):
@@ -247,7 +312,17 @@ class TestProviderFactoryDocumentation:
 
     def test_all_documented_providers_available(self):
         """Test all providers mentioned in docstring are available."""
-        documented_providers = ["memory", "filesystem", "s3", "ibm_cos"]
+        documented_providers = [
+            "memory",
+            "filesystem",
+            "s3",
+            "ibm_cos",
+            "vfs",
+            "vfs-memory",
+            "vfs-filesystem",
+            "vfs-s3",
+            "vfs-sqlite",
+        ]
 
         for provider in documented_providers:
             with patch.dict(os.environ, {"ARTIFACT_PROVIDER": provider}):
@@ -257,9 +332,17 @@ class TestProviderFactoryDocumentation:
 
     def test_provider_aliases_work(self):
         """Test that documented aliases work."""
-        aliases = {"mem": "memory", "inmemory": "memory", "fs": "filesystem"}
+        aliases = {
+            "mem": "memory",
+            "inmemory": "memory",
+            "fs": "filesystem",
+            "vfs_memory": "vfs",
+            "vfs_filesystem": "vfs-filesystem",
+            "vfs_s3": "vfs-s3",
+            "vfs_sqlite": "vfs-sqlite",
+        }
 
-        for alias, expected in aliases.items():
+        for alias in aliases.keys():
             with patch.dict(os.environ, {"ARTIFACT_PROVIDER": alias}):
                 factory = factory_for_env()
                 assert callable(factory)

@@ -906,16 +906,42 @@ class ArtifactStore:
 
     def _load_storage_provider(self, name: str) -> Callable[[], AsyncContextManager]:
         """Load storage provider."""
+        from .provider_factory import factory_for_env
         from importlib import import_module
+        import os
 
+        # Temporarily set the provider name in environment
+        # so factory_for_env can pick it up
+        original_provider = os.environ.get("ARTIFACT_PROVIDER")
         try:
-            mod = import_module(f"chuk_artifacts.providers.{name}")
-            return mod.factory()
-        except ModuleNotFoundError as exc:
-            available = ["memory", "filesystem", "s3", "ibm_cos"]
-            raise ValueError(
-                f"Unknown storage provider '{name}'. Available: {', '.join(available)}"
-            ) from exc
+            os.environ["ARTIFACT_PROVIDER"] = name
+            return factory_for_env()
+        except ValueError:
+            # If factory_for_env doesn't recognize it, try direct import
+            try:
+                mod = import_module(f"chuk_artifacts.providers.{name}")
+                return mod.factory()
+            except ModuleNotFoundError as exc:
+                available = [
+                    "memory",
+                    "filesystem",
+                    "s3",
+                    "ibm_cos",
+                    "vfs",
+                    "vfs-memory",
+                    "vfs-filesystem",
+                    "vfs-s3",
+                    "vfs-sqlite",
+                ]
+                raise ValueError(
+                    f"Unknown storage provider '{name}'. Available: {', '.join(available)}"
+                ) from exc
+        finally:
+            # Restore original environment
+            if original_provider is not None:
+                os.environ["ARTIFACT_PROVIDER"] = original_provider
+            else:
+                os.environ.pop("ARTIFACT_PROVIDER", None)
 
     def _load_session_provider(self, name: str) -> Callable[[], AsyncContextManager]:
         """Load session provider."""

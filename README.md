@@ -4,7 +4,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/chuk-artifacts)](https://pypi.org/project/chuk-artifacts/)
 [![Python](https://img.shields.io/pypi/pyversions/chuk-artifacts.svg)](https://pypi.org/project/chuk-artifacts/)
-[![Tests](https://img.shields.io/badge/tests-647%20passing-success.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-687%20passing-success.svg)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](#testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Async](https://img.shields.io/badge/async-await-green.svg)](https://docs.python.org/3/library/asyncio.html)
@@ -16,6 +16,7 @@ CHUK Artifacts provides a unified, async API for storing and retrieving files ("
 ## Table of Contents
 
 - [Architecture at a Glance](#architecture-at-a-glance)
+  - [Layered Architecture](#layered-architecture)
 - [Why This Exists](#why-this-exists)
 - [Design Guarantees](#design-guarantees)
 - [Install](#install)
@@ -38,7 +39,7 @@ CHUK Artifacts provides a unified, async API for storing and retrieving files ("
 
 ## Architecture at a Glance
 
-Your app talks to `ArtifactStore`; it enforces session rules and issues presigned URLs. Clients upload/download directly to storage—no credentials exposed, no proxying large file streams.
+Your app talks to `ArtifactStore`; it enforces session rules and issues presigned URLs. The **Virtual Filesystem (VFS)** layer provides a unified storage interface with streaming, progress tracking, and security features. Clients upload/download directly to storage—no credentials exposed, no proxying large file streams.
 
 ```
                          (Your App / MCP Server)
@@ -47,33 +48,76 @@ Your app talks to `ArtifactStore`; it enforces session rules and issues presigne
                                      ▼
 ┌───────────────────────────────────────────────────────────────┐
 │                        ArtifactStore                           │
+│                   (Policy & Access Control)                   │
 │                                                               │
-│  • Enforces session boundaries                                │
-│  • Talks to storage providers                                 │
+│  • Enforces session boundaries & user permissions             │
+│  • Manages scopes (session/user/sandbox)                      │
 │  • Issues presigned upload/download URLs                       │
 └───────────────┬───────────────────────────┬────────────────────┘
                 │                           │
                 │ session lookup            │ read/write files
                 │                           │
                 ▼                           ▼
-        ┌────────────┐              ┌────────────────────────────┐
-        │  Sessions  │              │        Storage             │
-        │  (Redis)   │              │ (Memory / FS / S3 / COS)   │
-        └─────┬──────┘              └───────┬─────────┬──────────┘
-              │                              │         │
-              │ authz                        │         │
-              │                              │         │
-              ▼                              ▼         ▼
-        (session_id)                  grid/{sandbox}/{session}/{artifact}
+        ┌────────────┐       ┌──────────────────────────────────┐
+        │  Sessions  │       │      Virtual Filesystem (VFS)     │
+        │  (Redis)   │       │   (Unified Storage Interface)     │
+        └─────┬──────┘       │                                   │
+              │              │  • Streaming support               │
+              │ authz        │  • Progress callbacks              │
+              │              │  • Security profiles               │
+              ▼              │  • Quota management                │
+        (session_id)         └────────┬──────────┬───────┬───────┘
+                                      │          │       │
+                                      │ storage  │       │
+                                      ▼          ▼       ▼
+                          ┌─────────────────────────────────────┐
+                          │      Storage Backends                │
+                          │                                      │
+                          │  Memory  │  Filesystem  │  S3  │  SQLite │
+                          └──────────────────────────────────────┘
+                                      │
+                                      ▼
+                          grid/{sandbox}/{session}/{artifact}
 ```
 
-**Caption**: The application calls ArtifactStore; the store consults the session provider for authz and talks to the configured storage backend. Clients use short-lived presigned URLs for direct uploads/downloads.
+**Caption**: The application calls ArtifactStore (policy layer); the store consults the session provider for authz and uses the VFS layer for unified storage operations. VFS provides streaming, progress tracking, and security features across all storage backends. Clients use short-lived presigned URLs for direct uploads/downloads.
+
+### Layered Architecture
+
+CHUK Artifacts uses a clean **separation of concerns** across three layers:
+
+**1. Policy Layer (ArtifactStore)**
+- Access control and user permissions
+- Session isolation and scope management
+- TTL enforcement and cleanup
+- Presigned URL generation
+- Grid path organization
+
+**2. Storage Abstraction Layer ([chuk-virtual-fs](https://github.com/chrishayuk/chuk-virtual-fs))**
+- Unified interface across storage backends
+- Streaming support for large files
+- Progress callbacks for uploads/downloads
+- Security profiles and quota management
+- Atomic operations and safety guarantees
+
+**3. Storage Backends**
+- `vfs-memory`: In-memory (development/testing)
+- `vfs-filesystem`: Local disk (small deployments)
+- `vfs-s3`: AWS S3 or S3-compatible (production)
+- `vfs-sqlite`: SQLite with structured queries
+
+**Benefits of this architecture:**
+- 🔒 **Security**: Policy decisions separate from storage mechanics
+- 🔄 **Portability**: Swap backends without code changes
+- 🚀 **Performance**: Streaming and progress tracking built-in
+- 🧪 **Testability**: Memory backend for instant tests
+- 📈 **Scalability**: Production backends (S3) ready out of the box
 
 ---
 
 ## Why This Exists
 
-Most platforms offer object storage (S3, COS, FS)—but not a **security boundary**.
+Most platforms offer object storage (S3, COS, FS)—but not a **security boundary** or a **unified storage interface**.
 
 **What CHUK Artifacts is (and isn't):**
 
@@ -86,8 +130,8 @@ CHUK Artifacts is **not**:
 CHUK Artifacts **is**:
 - ✅ A multi-scope storage system (ephemeral, persistent, shared)
 - ✅ A security and access control layer over object storage
-- ✅ A unified API across Memory / FS / S3 / COS
-- ✅ A presigned upload workflow system
+- ✅ A unified API across Memory / FS / S3 / SQLite (via [chuk-virtual-fs](https://github.com/chrishayuk/chuk-virtual-fs))
+- ✅ A presigned upload workflow system with streaming support
 - ✅ A grid-based storage architecture for multi-tenant AI apps
 
 ---
@@ -177,7 +221,25 @@ async with ArtifactStore() as store:
 
 ## Providers & Sessions
 
-| Feature                  | Memory | Filesystem | S3 | IBM COS |
+### Storage Providers
+
+CHUK Artifacts supports two types of storage providers:
+
+**🆕 VFS Providers** (Recommended) - Powered by [chuk-virtual-fs](https://github.com/chrishayuk/chuk-virtual-fs)
+
+| Feature                  | vfs-memory | vfs-filesystem | vfs-s3 | vfs-sqlite |
+|-------------------------|-----------|----------------|--------|------------|
+| **Persistence**         | No        | Yes            | Yes    | Yes        |
+| **Horizontal scale**    | No        | Limited        | Yes    | No         |
+| **Streaming support**   | ✅ Ready  | ✅ Ready       | ✅ Ready | ✅ Ready  |
+| **Progress callbacks**  | ✅ Ready  | ✅ Ready       | ✅ Ready | ✅ Ready  |
+| **Virtual mounts**      | ✅ Ready  | ✅ Ready       | ✅ Ready | ✅ Ready  |
+| **Setup complexity**    | None      | Minimal        | Moderate | Minimal  |
+| **Best use**            | Dev/Test  | Small deploys  | Production | Structured data |
+
+**Legacy Providers** (Backward compatible)
+
+| Feature                  | memory | filesystem | s3 | ibm_cos |
 |-------------------------|--------|------------|----|---------|
 | **Persistence**         | No     | Yes        | Yes| Yes     |
 | **Horizontal scale**    | No     | Limited    | Yes| Yes     |
@@ -189,10 +251,43 @@ async with ArtifactStore() as store:
 \* Memory URLs are in-process only, not network-accessible.
 \*\* Filesystem presigns are local paths; expose via your app (e.g., signed route). Not directly internet-accessible.
 
-**Quick config:**
+### VFS Providers Configuration
+
+**VFS providers offer a unified interface with future-ready features like streaming and virtual mounts:**
+
+```bash
+# Development (VFS memory - default with legacy fallback)
+export ARTIFACT_PROVIDER=vfs-memory
+
+# VFS Filesystem
+export ARTIFACT_PROVIDER=vfs-filesystem
+export ARTIFACT_FS_ROOT=./my-artifacts
+
+# VFS S3 (AWS or S3-compatible)
+export ARTIFACT_PROVIDER=vfs-s3
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+export ARTIFACT_BUCKET=my-bucket
+
+# VFS SQLite (for structured metadata queries)
+export ARTIFACT_PROVIDER=vfs-sqlite
+export ARTIFACT_SQLITE_PATH=./artifacts.db
+```
+
+**Benefits of VFS Providers:**
+- 🚀 **Future-ready**: Built-in support for streaming large files (Phase 2+)
+- 🎯 **Progress tracking**: Upload/download progress callbacks
+- 🔧 **Virtual mounts**: Mix providers per scope (memory for sessions, S3 for users)
+- 🗄️ **SQLite support**: Structured queries for metadata
+- 🔒 **Security profiles**: Quota management and path validation
+
+### Legacy Providers Configuration
+
+**Legacy providers remain fully supported for backward compatibility:**
 
 ```bash
 # Development (default) - no configuration needed!
+# Uses legacy memory provider
 
 # Filesystem
 export ARTIFACT_PROVIDER=filesystem
@@ -211,6 +306,8 @@ export IBM_COS_SECRET_KEY=...
 export IBM_COS_ENDPOINT=https://s3.us-south.cloud-object-storage.appdomain.cloud
 export ARTIFACT_BUCKET=my-bucket
 ```
+
+**Migration Note:** Both legacy and VFS providers work identically from the API perspective. VFS providers are recommended for new projects to access future streaming and mount features.
 
 ---
 
@@ -993,6 +1090,9 @@ python examples/smoke_run.py
 ### Run Integration Demos
 
 ```bash
+# VFS provider demo (Memory, Filesystem, S3, SQLite)
+python examples/vfs_provider_demo.py
+
 # Grid architecture demo
 python examples/artifact_grid_demo.py
 
@@ -1008,7 +1108,7 @@ See all examples: [`examples/`](./examples/) ([GitHub](https://github.com/chrish
 ### Unit Tests
 
 ```bash
-# Run full test suite (647 tests)
+# Run full test suite (687 tests)
 uv run pytest tests/ -v
 
 # With coverage report (95% coverage)
@@ -1018,6 +1118,7 @@ uv run pytest tests/ --cov=src/chuk_artifacts --cov-report=term-missing
 uv run pytest tests/test_store.py -v  # Core store tests
 uv run pytest tests/test_access_control.py -v  # Access control tests
 uv run pytest tests/test_grid.py -v  # Grid path tests
+uv run pytest tests/providers/test_vfs_adapter.py -v  # VFS adapter tests
 ```
 
 ```python
@@ -1053,12 +1154,20 @@ asyncio.run(test_basic())
 
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
-| `ARTIFACT_PROVIDER` | Storage backend | `memory` | `s3`, `filesystem`, `ibm_cos` |
+| `ARTIFACT_PROVIDER` | Storage backend | `memory` | `vfs-memory`, `vfs-s3`, `s3`, `filesystem` |
 | `ARTIFACT_BUCKET` | Bucket/container name | `artifacts` | `my-files`, `prod-storage` |
 | `ARTIFACT_SANDBOX_ID` | Sandbox identifier | Auto-generated | `myapp`, `prod-env` |
 | `SESSION_PROVIDER` | Session metadata storage | `memory` | `redis` |
 
-### Filesystem Configuration
+### VFS Configuration (Recommended)
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `ARTIFACT_PROVIDER` | VFS provider | `vfs-memory` | `vfs-filesystem`, `vfs-s3`, `vfs-sqlite` |
+| `ARTIFACT_FS_ROOT` | VFS filesystem root | `./artifacts` | `/data/files`, `~/storage` |
+| `ARTIFACT_SQLITE_PATH` | VFS SQLite database | `artifacts.db` | `/data/artifacts.db` |
+
+### Filesystem Configuration (Legacy)
 
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
@@ -1172,17 +1281,21 @@ expired = await store.cleanup_expired_sessions()
 - Scope-based storage (session, user, sandbox)
 - Access control with user_id
 - Search functionality for user artifacts
-- 95% test coverage (647 tests)
+- **VFS integration** - [chuk-virtual-fs](https://github.com/chrishayuk/chuk-virtual-fs) as unified storage layer
+- **SQLite support** - Structured storage via VFS
+- 95% test coverage (687 tests)
 
-**Phase 2 (Planned)**:
-- [ ] **Streaming uploads/downloads** - For large files (>100MB)
+**Phase 2 (In Progress - VFS-Enabled)**:
+- 🚀 **Streaming uploads/downloads** - VFS ready, API integration in progress
+- 🚀 **Progress callbacks** - VFS ready, API integration in progress
+- 🚀 **Virtual mounts** - Mix providers per scope (VFS feature)
 - [ ] **Metadata search index** - Elasticsearch/Typesense integration
 - [ ] **Share links** - Temporary shareable URLs with expiry
-- [ ] **User quotas** - Storage limits and usage tracking
+- [ ] **User quotas** - Storage limits and usage tracking (VFS security profiles)
 
 **Future Enhancements**:
-- [ ] **GCS backend** - Google Cloud Storage support
-- [ ] **Azure Blob Storage** - Microsoft Azure support
+- [ ] **GCS backend** - Google Cloud Storage via VFS
+- [ ] **Azure Blob Storage** - Microsoft Azure via VFS
 - [ ] **Client-side encryption** - Optional end-to-end encryption
 - [ ] **Audit logging** - Detailed access logs for compliance
 - [ ] **CDN integration** - CloudFront/Cloudflare integration
@@ -1205,6 +1318,7 @@ expired = await store.cleanup_expired_sessions()
 ## Links
 
 - **Examples**: [`./examples/`](./examples/)
+- **Storage Layer**: [chuk-virtual-fs](https://github.com/chrishayuk/chuk-virtual-fs) - Unified virtual filesystem
 - **Tests**: Run `python examples/smoke_run.py`
 - **Issues**: [GitHub Issues](https://github.com/chrishayuk/chuk-artifacts/issues)
 - **License**: MIT

@@ -34,6 +34,33 @@ def factory_for_env() -> Callable[[], AsyncContextManager]:
     provider = os.getenv("ARTIFACT_PROVIDER", "memory").lower().strip()
 
     # Fast paths for the built-ins ------------------------------------------------
+    # VFS-backed providers (new unified approach)
+    if provider in ("vfs", "vfs-memory", "vfs_memory"):
+        from .providers import vfs_adapter
+
+        return vfs_adapter.factory(provider="memory")
+
+    if provider in ("vfs-filesystem", "vfs_filesystem", "vfs-fs", "vfs_fs"):
+        from .providers import vfs_adapter
+
+        root_path = os.getenv("ARTIFACT_FS_ROOT", "/tmp/artifacts")
+        return vfs_adapter.factory(provider="filesystem", root_path=root_path)
+
+    if provider in ("vfs-s3", "vfs_s3"):
+        from .providers import vfs_adapter
+
+        return vfs_adapter.factory(
+            provider="s3",
+            bucket_name=os.getenv("ARTIFACT_BUCKET", "artifacts"),
+        )
+
+    if provider in ("vfs-sqlite", "vfs_sqlite"):
+        from .providers import vfs_adapter
+
+        db_path = os.getenv("ARTIFACT_SQLITE_PATH", "artifacts.db")
+        return vfs_adapter.factory(provider="sqlite", db_path=db_path)
+
+    # Legacy providers (kept for backward compatibility)
     # Memory first as it's the default
     if provider in ("memory", "mem", "inmemory"):
         from .providers import memory
@@ -62,7 +89,17 @@ def factory_for_env() -> Callable[[], AsyncContextManager]:
         mod = import_module(f"chuk_artifacts.providers.{provider}")
     except ModuleNotFoundError as exc:
         # Provide helpful error message with available providers
-        available = ["memory", "filesystem", "s3", "ibm_cos"]
+        available = [
+            "memory",
+            "filesystem",
+            "s3",
+            "ibm_cos",
+            "vfs",
+            "vfs-memory",
+            "vfs-filesystem",
+            "vfs-s3",
+            "vfs-sqlite",
+        ]
         raise ValueError(
             f"Unknown storage provider '{provider}'. "
             f"Available providers: {', '.join(available)}"
