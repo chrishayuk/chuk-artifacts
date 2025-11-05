@@ -17,14 +17,10 @@ Tests cover:
 import pytest
 import json
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from datetime import datetime
-from typing import Dict, Any, List
+from unittest.mock import Mock, AsyncMock
 
 from chuk_artifacts.metadata import MetadataOperations
-from chuk_artifacts.exceptions import (
-    ProviderError, SessionError, ArtifactNotFoundError
-)
+from chuk_artifacts.exceptions import ProviderError, SessionError, ArtifactNotFoundError
 
 
 class TestMetadataOperationsBasics:
@@ -59,20 +55,20 @@ class TestMetadataOperationsBasics:
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Mock metadata record
         test_record = {
             "artifact_id": "test123",
             "mime": "text/plain",
             "summary": "Test artifact",
             "bytes": 1024,
-            "created_at": "2025-01-01T00:00:00Z"
+            "created_at": "2025-01-01T00:00:00Z",
         }
         mock_session.get.return_value = json.dumps(test_record)
-        
+
         # Test get_metadata
         result = await metadata_ops.get_metadata("test123")
-        
+
         # Verify
         assert result == test_record
         mock_session.get.assert_called_once_with("test123")
@@ -86,7 +82,7 @@ class TestMetadataOperationsBasics:
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
         mock_session.get.return_value = None
-        
+
         # Test get_metadata
         with pytest.raises(ArtifactNotFoundError, match="Artifact test123 not found"):
             await metadata_ops.get_metadata("test123")
@@ -100,7 +96,7 @@ class TestMetadataOperationsBasics:
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
         mock_session.get.return_value = "invalid json {"
-        
+
         # Test get_metadata
         with pytest.raises(ProviderError, match="Corrupted metadata for test123"):
             await metadata_ops.get_metadata("test123")
@@ -114,7 +110,7 @@ class TestMetadataOperationsBasics:
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
         mock_session.get.side_effect = Exception("Connection failed")
-        
+
         # Test get_metadata
         with pytest.raises(SessionError, match="Session error for test123"):
             await metadata_ops.get_metadata("test123")
@@ -136,7 +132,7 @@ class TestMetadataOperationsExists:
         # Mock _get_record to return successfully
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.return_value = {"artifact_id": "test123"}
-        
+
         result = await metadata_ops.exists("test123")
         assert result is True
         metadata_ops._get_record.assert_called_once_with("test123")
@@ -147,7 +143,7 @@ class TestMetadataOperationsExists:
         # Mock _get_record to raise exception
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.side_effect = ArtifactNotFoundError("Not found")
-        
+
         result = await metadata_ops.exists("test123")
         assert result is False
         metadata_ops._get_record.assert_called_once_with("test123")
@@ -158,7 +154,7 @@ class TestMetadataOperationsExists:
         # Mock _get_record to raise any exception
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.side_effect = ProviderError("Provider error")
-        
+
         result = await metadata_ops.exists("test123")
         assert result is False
 
@@ -180,33 +176,31 @@ class TestMetadataOperationsDelete:
         """Create MetadataOperations instance."""
         return MetadataOperations(mock_artifact_store)
 
-    
-
-
     @pytest.mark.asyncio
     async def test_delete_failure(self, metadata_ops, mock_artifact_store):
         """Test deletion failure."""
         # Mock record retrieval to fail
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.side_effect = ArtifactNotFoundError("Not found")
-        
+
         # Test deletion
         result = await metadata_ops.delete("test123")
-        
+
         # Should return False on failure (as expected based on the exception handling)
         assert result is False
 
-
     @pytest.mark.asyncio
-    async def test_delete_session_without_delete_method(self, metadata_ops, mock_artifact_store):
+    async def test_delete_session_without_delete_method(
+        self, metadata_ops, mock_artifact_store
+    ):
         """Test deletion when session provider doesn't have delete method."""
         # Mock successful record retrieval
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.return_value = {
             "key": "test/path/test123",
-            "artifact_id": "test123"
+            "artifact_id": "test123",
         }
-        
+
         # Mock storage deletion (successful)
         mock_s3 = AsyncMock()
         mock_s3.delete_object = AsyncMock()
@@ -214,41 +208,41 @@ class TestMetadataOperationsDelete:
         mock_storage_ctx.__aenter__.return_value = mock_s3
         mock_storage_ctx.__aexit__.return_value = None
         mock_artifact_store._s3_factory.return_value = mock_storage_ctx
-        
+
         # Create a custom object that truly doesn't have a delete method
         class SessionWithoutDelete:
             pass
-        
+
         mock_session = SessionWithoutDelete()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_session_ctx.__aexit__.return_value = None
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test deletion
         result = await metadata_ops.delete("test123")
-        
+
         # Should return True even without session delete method
         # (storage deletion succeeded, session deletion skipped due to no delete method)
         assert result is True
-        
+
         # Verify storage delete was called
         mock_s3.delete_object.assert_called_once_with(
-            Bucket=mock_artifact_store.bucket,
-            Key="test/path/test123"
+            Bucket=mock_artifact_store.bucket, Key="test/path/test123"
         )
 
-
-    @pytest.mark.asyncio  
-    async def test_delete_session_with_delete_method_success(self, metadata_ops, mock_artifact_store):
+    @pytest.mark.asyncio
+    async def test_delete_session_with_delete_method_success(
+        self, metadata_ops, mock_artifact_store
+    ):
         """Test successful deletion when session provider has delete method."""
         # Mock successful record retrieval
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.return_value = {
-            "key": "test/path/test123", 
-            "artifact_id": "test123"
+            "key": "test/path/test123",
+            "artifact_id": "test123",
         }
-        
+
         # Mock storage deletion (successful)
         mock_s3 = AsyncMock()
         mock_s3.delete_object = AsyncMock()
@@ -256,7 +250,7 @@ class TestMetadataOperationsDelete:
         mock_storage_ctx.__aenter__.return_value = mock_s3
         mock_storage_ctx.__aexit__.return_value = None
         mock_artifact_store._s3_factory.return_value = mock_storage_ctx
-        
+
         # Mock session provider WITH async delete method
         mock_session = AsyncMock()
         mock_session.delete = AsyncMock()  # Proper async delete method
@@ -264,31 +258,31 @@ class TestMetadataOperationsDelete:
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_session_ctx.__aexit__.return_value = None
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test deletion
         result = await metadata_ops.delete("test123")
-        
+
         # Should return True
         assert result is True
-        
+
         # Verify both storage and session delete were called
         mock_s3.delete_object.assert_called_once_with(
-            Bucket=mock_artifact_store.bucket,
-            Key="test/path/test123"
+            Bucket=mock_artifact_store.bucket, Key="test/path/test123"
         )
         mock_session.delete.assert_called_once_with("test123")
 
-
     @pytest.mark.asyncio
-    async def test_delete_session_delete_method_failure(self, metadata_ops, mock_artifact_store):
+    async def test_delete_session_delete_method_failure(
+        self, metadata_ops, mock_artifact_store
+    ):
         """Test deletion when session delete method fails."""
         # Mock successful record retrieval
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.return_value = {
             "key": "test/path/test123",
-            "artifact_id": "test123"
+            "artifact_id": "test123",
         }
-        
+
         # Mock storage deletion (successful)
         mock_s3 = AsyncMock()
         mock_s3.delete_object = AsyncMock()
@@ -296,7 +290,7 @@ class TestMetadataOperationsDelete:
         mock_storage_ctx.__aenter__.return_value = mock_s3
         mock_storage_ctx.__aexit__.return_value = None
         mock_artifact_store._s3_factory.return_value = mock_storage_ctx
-        
+
         # Mock session provider with failing delete method
         mock_session = AsyncMock()
         mock_session.delete = AsyncMock()
@@ -305,10 +299,10 @@ class TestMetadataOperationsDelete:
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_session_ctx.__aexit__.return_value = None
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test deletion
         result = await metadata_ops.delete("test123")
-        
+
         # Should return False due to session delete failure
         assert result is False
 
@@ -318,17 +312,17 @@ class TestMetadataOperationsDelete:
         # Mock record retrieval
         test_record = {"artifact_id": "test123", "key": "test/key"}
         metadata_ops._get_record = AsyncMock(return_value=test_record)
-        
+
         # Mock storage deletion to fail
         mock_s3 = AsyncMock()
         mock_s3_ctx = AsyncMock()
         mock_s3_ctx.__aenter__.return_value = mock_s3
         mock_s3.delete_object.side_effect = Exception("Storage error")
         mock_artifact_store._s3_factory.return_value = mock_s3_ctx
-        
+
         # Test deletion
         result = await metadata_ops.delete("test123")
-        
+
         # Should return False on storage error
         assert result is False
 
@@ -356,105 +350,111 @@ class TestMetadataOperationsListing:
     async def test_list_by_session_success(self, metadata_ops, mock_artifact_store):
         """Test successful session listing."""
         # Mock canonical prefix
-        mock_artifact_store.get_canonical_prefix.return_value = "grid/sandbox/session123/"
-        
+        mock_artifact_store.get_canonical_prefix.return_value = (
+            "grid/sandbox/session123/"
+        )
+
         # Mock S3 listing
         mock_s3 = AsyncMock()
         mock_s3_ctx = AsyncMock()
         mock_s3_ctx.__aenter__.return_value = mock_s3
         mock_artifact_store._s3_factory.return_value = mock_s3_ctx
-        
+
         # Mock S3 response
         mock_s3.list_objects_v2.return_value = {
-            'Contents': [
-                {'Key': 'grid/sandbox/session123/artifact1'},
-                {'Key': 'grid/sandbox/session123/artifact2'},
-                {'Key': 'grid/sandbox/session123/artifact3'}
+            "Contents": [
+                {"Key": "grid/sandbox/session123/artifact1"},
+                {"Key": "grid/sandbox/session123/artifact2"},
+                {"Key": "grid/sandbox/session123/artifact3"},
             ]
         }
-        
+
         # Mock grid key parsing
         mock_artifact_store.parse_grid_key.side_effect = [
-            {'artifact_id': 'artifact1'},
-            {'artifact_id': 'artifact2'},
-            {'artifact_id': 'artifact3'}
+            {"artifact_id": "artifact1"},
+            {"artifact_id": "artifact2"},
+            {"artifact_id": "artifact3"},
         ]
-        
+
         # Mock metadata records
         test_records = [
             {"artifact_id": "artifact1", "summary": "First artifact"},
             {"artifact_id": "artifact2", "summary": "Second artifact"},
-            {"artifact_id": "artifact3", "summary": "Third artifact"}
+            {"artifact_id": "artifact3", "summary": "Third artifact"},
         ]
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.side_effect = test_records
-        
+
         # Test listing
         result = await metadata_ops.list_by_session("session123", limit=10)
-        
+
         # Verify
         assert len(result) == 3
         assert result[0]["artifact_id"] == "artifact1"
         assert result[1]["artifact_id"] == "artifact2"
         assert result[2]["artifact_id"] == "artifact3"
-        
+
         mock_artifact_store.get_canonical_prefix.assert_called_once_with("session123")
         mock_s3.list_objects_v2.assert_called_once_with(
-            Bucket="test-bucket",
-            Prefix="grid/sandbox/session123/",
-            MaxKeys=10
+            Bucket="test-bucket", Prefix="grid/sandbox/session123/", MaxKeys=10
         )
 
     @pytest.mark.asyncio
-    async def test_list_by_session_no_list_support(self, metadata_ops, mock_artifact_store):
+    async def test_list_by_session_no_list_support(
+        self, metadata_ops, mock_artifact_store
+    ):
         """Test listing when storage doesn't support list_objects_v2."""
         # Mock S3 without list_objects_v2
         mock_s3 = Mock()  # Regular mock without list_objects_v2
         mock_s3_ctx = AsyncMock()
         mock_s3_ctx.__aenter__.return_value = mock_s3
         mock_artifact_store._s3_factory.return_value = mock_s3_ctx
-        
+
         # Test listing
         result = await metadata_ops.list_by_session("session123")
-        
+
         # Should return empty list
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_list_by_session_with_metadata_errors(self, metadata_ops, mock_artifact_store):
+    async def test_list_by_session_with_metadata_errors(
+        self, metadata_ops, mock_artifact_store
+    ):
         """Test listing with some metadata retrieval errors."""
         # Mock S3 setup
-        mock_artifact_store.get_canonical_prefix.return_value = "grid/sandbox/session123/"
+        mock_artifact_store.get_canonical_prefix.return_value = (
+            "grid/sandbox/session123/"
+        )
         mock_s3 = AsyncMock()
         mock_s3_ctx = AsyncMock()
         mock_s3_ctx.__aenter__.return_value = mock_s3
         mock_artifact_store._s3_factory.return_value = mock_s3_ctx
-        
+
         mock_s3.list_objects_v2.return_value = {
-            'Contents': [
-                {'Key': 'grid/sandbox/session123/artifact1'},
-                {'Key': 'grid/sandbox/session123/artifact2'},
-                {'Key': 'grid/sandbox/session123/artifact3'}
+            "Contents": [
+                {"Key": "grid/sandbox/session123/artifact1"},
+                {"Key": "grid/sandbox/session123/artifact2"},
+                {"Key": "grid/sandbox/session123/artifact3"},
             ]
         }
-        
+
         mock_artifact_store.parse_grid_key.side_effect = [
-            {'artifact_id': 'artifact1'},
-            {'artifact_id': 'artifact2'},
-            {'artifact_id': 'artifact3'}
+            {"artifact_id": "artifact1"},
+            {"artifact_id": "artifact2"},
+            {"artifact_id": "artifact3"},
         ]
-        
+
         # Mock metadata records with one failure
         def mock_get_record(artifact_id):
             if artifact_id == "artifact2":
                 raise ArtifactNotFoundError("Metadata missing")
             return {"artifact_id": artifact_id, "summary": f"Artifact {artifact_id}"}
-        
+
         metadata_ops._get_record = AsyncMock(side_effect=mock_get_record)
-        
+
         # Test listing
         result = await metadata_ops.list_by_session("session123")
-        
+
         # Should skip artifact2 and return only artifact1 and artifact3
         assert len(result) == 2
         assert result[0]["artifact_id"] == "artifact1"
@@ -464,11 +464,13 @@ class TestMetadataOperationsListing:
     async def test_list_by_session_error(self, metadata_ops, mock_artifact_store):
         """Test listing with general error."""
         # Mock error in get_canonical_prefix
-        mock_artifact_store.get_canonical_prefix.side_effect = Exception("General error")
-        
+        mock_artifact_store.get_canonical_prefix.side_effect = Exception(
+            "General error"
+        )
+
         # Test listing
         result = await metadata_ops.list_by_session("session123")
-        
+
         # Should return empty list on error
         assert result == []
 
@@ -479,16 +481,18 @@ class TestMetadataOperationsListing:
         test_artifacts = [
             {"artifact_id": "artifact1", "filename": "file1.txt"},
             {"artifact_id": "artifact2", "filename": "file2.txt"},
-            {"artifact_id": "artifact3", "filename": "doc1.pdf"}
+            {"artifact_id": "artifact3", "filename": "doc1.pdf"},
         ]
         metadata_ops.list_by_session = AsyncMock(return_value=test_artifacts)
-        
+
         # Test with no prefix
         result = await metadata_ops.list_by_prefix("session123", prefix="", limit=5)
-        
+
         # Should return all artifacts
         assert len(result) == 3
-        metadata_ops.list_by_session.assert_called_once_with("session123", 10)  # limit * 2
+        metadata_ops.list_by_session.assert_called_once_with(
+            "session123", 10
+        )  # limit * 2
 
     @pytest.mark.asyncio
     async def test_list_by_prefix_with_filter(self, metadata_ops):
@@ -498,13 +502,13 @@ class TestMetadataOperationsListing:
             {"artifact_id": "artifact1", "filename": "doc1.txt"},
             {"artifact_id": "artifact2", "filename": "image1.png"},
             {"artifact_id": "artifact3", "filename": "doc2.pdf"},
-            {"artifact_id": "artifact4", "filename": "doc3.docx"}
+            {"artifact_id": "artifact4", "filename": "doc3.docx"},
         ]
         metadata_ops.list_by_session = AsyncMock(return_value=test_artifacts)
-        
+
         # Test with "doc" prefix
         result = await metadata_ops.list_by_prefix("session123", prefix="doc", limit=5)
-        
+
         # Should return only files starting with "doc"
         assert len(result) == 3
         assert all(artifact["filename"].startswith("doc") for artifact in result)
@@ -518,10 +522,10 @@ class TestMetadataOperationsListing:
             for i in range(10)
         ]
         metadata_ops.list_by_session = AsyncMock(return_value=test_artifacts)
-        
+
         # Test with limit
         result = await metadata_ops.list_by_prefix("session123", prefix="file", limit=3)
-        
+
         # Should return only 3 results
         assert len(result) == 3
 
@@ -533,13 +537,13 @@ class TestMetadataOperationsListing:
             {"artifact_id": "artifact1", "filename": "file1.txt"},
             {"artifact_id": "artifact2"},  # No filename
             {"artifact_id": "artifact3", "filename": "file3.txt"},
-            {"artifact_id": "artifact4", "filename": ""}  # Empty filename
+            {"artifact_id": "artifact4", "filename": ""},  # Empty filename
         ]
         metadata_ops.list_by_session = AsyncMock(return_value=test_artifacts)
-        
+
         # Test with prefix
         result = await metadata_ops.list_by_prefix("session123", prefix="file", limit=5)
-        
+
         # Should only return artifacts with matching filenames
         assert len(result) == 2
         assert result[0]["filename"] == "file1.txt"
@@ -550,10 +554,10 @@ class TestMetadataOperationsListing:
         """Test prefix listing with error."""
         # Mock list_by_session to raise error
         metadata_ops.list_by_session = AsyncMock(side_effect=Exception("Listing error"))
-        
+
         # Test listing
         result = await metadata_ops.list_by_prefix("session123", prefix="test")
-        
+
         # Should return empty list on error
         assert result == []
 
@@ -581,27 +585,24 @@ class TestMetadataOperationsUpdate:
             "artifact_id": "test123",
             "summary": "Old summary",
             "meta": {"key": "value"},
-            "ttl": 900
+            "ttl": 900,
         }
         metadata_ops._get_record = AsyncMock(return_value=existing_record.copy())
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test update
-        result = await metadata_ops.update_metadata(
-            "test123",
-            summary="New summary"
-        )
-        
+        result = await metadata_ops.update_metadata("test123", summary="New summary")
+
         # Verify
         assert result["summary"] == "New summary"
         assert result["meta"] == {"key": "value"}  # Unchanged
         mock_session.setex.assert_called_once()
-        
+
         # Check the stored data
         call_args = mock_session.setex.call_args
         assert call_args[0][0] == "test123"  # artifact_id
@@ -617,56 +618,56 @@ class TestMetadataOperationsUpdate:
             "artifact_id": "test123",
             "summary": "Test",
             "meta": {"existing_key": "existing_value", "keep": "this"},
-            "ttl": 900
+            "ttl": 900,
         }
         metadata_ops._get_record = AsyncMock(return_value=existing_record.copy())
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test update with merge
         result = await metadata_ops.update_metadata(
             "test123",
             meta={"new_key": "new_value", "existing_key": "updated_value"},
-            merge=True
+            merge=True,
         )
-        
+
         # Verify merge behavior
         expected_meta = {
             "existing_key": "updated_value",  # Updated
             "keep": "this",  # Kept
-            "new_key": "new_value"  # Added
+            "new_key": "new_value",  # Added
         }
         assert result["meta"] == expected_meta
 
     @pytest.mark.asyncio
-    async def test_update_metadata_replace_meta(self, metadata_ops, mock_artifact_store):
+    async def test_update_metadata_replace_meta(
+        self, metadata_ops, mock_artifact_store
+    ):
         """Test updating metadata without merge."""
         # Mock existing record
         existing_record = {
             "artifact_id": "test123",
             "summary": "Test",
             "meta": {"existing_key": "existing_value", "keep": "this"},
-            "ttl": 900
+            "ttl": 900,
         }
         metadata_ops._get_record = AsyncMock(return_value=existing_record.copy())
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test update without merge
         result = await metadata_ops.update_metadata(
-            "test123",
-            meta={"new_key": "new_value"},
-            merge=False
+            "test123", meta={"new_key": "new_value"}, merge=False
         )
-        
+
         # Verify replace behavior
         assert result["meta"] == {"new_key": "new_value"}
 
@@ -679,23 +680,21 @@ class TestMetadataOperationsUpdate:
             "summary": "Test",
             "meta": {},
             "ttl": 900,
-            "mime": "text/plain"
+            "mime": "text/plain",
         }
         metadata_ops._get_record = AsyncMock(return_value=existing_record.copy())
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test update with kwargs
         result = await metadata_ops.update_metadata(
-            "test123",
-            mime="application/json",
-            custom_field="custom_value"
+            "test123", mime="application/json", custom_field="custom_value"
         )
-        
+
         # Verify kwargs were applied
         assert result["mime"] == "application/json"
         assert result["custom_field"] == "custom_value"
@@ -706,7 +705,7 @@ class TestMetadataOperationsUpdate:
         # Mock _get_record to fail
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.side_effect = ArtifactNotFoundError("Not found")
-        
+
         # Test update
         with pytest.raises(ProviderError, match="Metadata update failed"):
             await metadata_ops.update_metadata("test123", summary="New summary")
@@ -715,25 +714,21 @@ class TestMetadataOperationsUpdate:
     async def test_extend_ttl(self, metadata_ops, mock_artifact_store):
         """Test extending TTL."""
         # Mock existing record
-        existing_record = {
-            "artifact_id": "test123",
-            "summary": "Test",
-            "ttl": 900
-        }
+        existing_record = {"artifact_id": "test123", "summary": "Test", "ttl": 900}
         metadata_ops._get_record = AsyncMock(return_value=existing_record.copy())
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test TTL extension
         result = await metadata_ops.extend_ttl("test123", 600)
-        
+
         # Verify
         assert result["ttl"] == 1500  # 900 + 600
-        
+
         # Check storage call
         mock_session.setex.assert_called_once()
         call_args = mock_session.setex.call_args
@@ -743,21 +738,18 @@ class TestMetadataOperationsUpdate:
     async def test_extend_ttl_default_ttl(self, metadata_ops, mock_artifact_store):
         """Test extending TTL when no TTL in record."""
         # Mock existing record without TTL
-        existing_record = {
-            "artifact_id": "test123",
-            "summary": "Test"
-        }
+        existing_record = {"artifact_id": "test123", "summary": "Test"}
         metadata_ops._get_record = AsyncMock(return_value=existing_record.copy())
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         mock_artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Test TTL extension
         result = await metadata_ops.extend_ttl("test123", 300)
-        
+
         # Verify default TTL (900) + extension
         assert result["ttl"] == 1200  # 900 + 300
 
@@ -767,7 +759,7 @@ class TestMetadataOperationsUpdate:
         # Mock _get_record to fail
         metadata_ops._get_record = AsyncMock()
         metadata_ops._get_record.side_effect = Exception("Database error")
-        
+
         # Test TTL extension
         with pytest.raises(ProviderError, match="TTL extension failed"):
             await metadata_ops.extend_ttl("test123", 600)
@@ -791,19 +783,19 @@ class TestMetadataOperationsEdgeCases:
             "artifact_id": "large_test",
             "summary": "Large metadata test",
             "meta": large_meta,
-            "bytes": 1024000
+            "bytes": 1024000,
         }
-        
+
         # Mock session to return large record
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         metadata_ops.artifact_store._session_factory.return_value = mock_session_ctx
         mock_session.get.return_value = json.dumps(large_record)
-        
+
         # Test retrieval
         result = await metadata_ops.get_metadata("large_test")
-        
+
         # Should handle large records
         assert result["artifact_id"] == "large_test"
         assert len(result["meta"]) == 100
@@ -817,20 +809,20 @@ class TestMetadataOperationsEdgeCases:
             "meta": {
                 "description": "Contains émojis 🚀 and spéciâl chàractérs",
                 "tags": ["tëst", "üñïcodé", "🏷️"],
-                "chinese": "中文测试"
-            }
+                "chinese": "中文测试",
+            },
         }
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         metadata_ops.artifact_store._session_factory.return_value = mock_session_ctx
         mock_session.get.return_value = json.dumps(unicode_record, ensure_ascii=False)
-        
+
         # Test retrieval
         result = await metadata_ops.get_metadata("unicode_test_🎉")
-        
+
         # Should handle Unicode correctly
         assert result["artifact_id"] == "unicode_test_🎉"
         assert "🚀" in result["meta"]["description"]
@@ -846,19 +838,19 @@ class TestMetadataOperationsEdgeCases:
             "meta": {},
             "filename": None,
             "tags": [],
-            "bytes": 0
+            "bytes": 0,
         }
-        
+
         # Mock session
         mock_session = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         metadata_ops.artifact_store._session_factory.return_value = mock_session_ctx
         mock_session.get.return_value = json.dumps(empty_record)
-        
+
         # Test retrieval
         result = await metadata_ops.get_metadata("empty_test")
-        
+
         # Should handle empty values
         assert result["artifact_id"] == ""
         assert result["summary"] == ""
@@ -875,24 +867,23 @@ class TestMetadataOperationsEdgeCases:
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_session
         metadata_ops.artifact_store._session_factory.return_value = mock_session_ctx
-        
+
         # Mock different records for different artifact IDs
         def mock_get_side_effect(artifact_id):
-            return json.dumps({
-                "artifact_id": artifact_id,
-                "summary": f"Concurrent test {artifact_id}",
-                "meta": {"index": artifact_id[-1]}
-            })
-        
+            return json.dumps(
+                {
+                    "artifact_id": artifact_id,
+                    "summary": f"Concurrent test {artifact_id}",
+                    "meta": {"index": artifact_id[-1]},
+                }
+            )
+
         mock_session.get.side_effect = mock_get_side_effect
-        
+
         # Test concurrent retrieval
-        tasks = [
-            metadata_ops.get_metadata(f"concurrent_test_{i}")
-            for i in range(5)
-        ]
+        tasks = [metadata_ops.get_metadata(f"concurrent_test_{i}") for i in range(5)]
         results = await asyncio.gather(*tasks)
-        
+
         # Verify all completed successfully
         assert len(results) == 5
         for i, result in enumerate(results):
@@ -902,9 +893,11 @@ class TestMetadataOperationsEdgeCases:
 
 if __name__ == "__main__":
     # Run the tests
-    pytest.main([
-        __file__,
-        "-v",
-        "--tb=short",
-        "--durations=10",
-    ])
+    pytest.main(
+        [
+            __file__,
+            "-v",
+            "--tb=short",
+            "--durations=10",
+        ]
+    )

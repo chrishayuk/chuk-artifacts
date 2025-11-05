@@ -8,7 +8,8 @@ Supports standard AWS credentials and S3-compatible endpoints.
 """
 
 from __future__ import annotations
-import os, aioboto3
+import os
+import aioboto3
 from contextlib import asynccontextmanager
 from typing import Optional, Callable, AsyncContextManager
 
@@ -22,7 +23,7 @@ def factory(
 ) -> Callable[[], AsyncContextManager]:
     """
     Create an S3 client factory.
-    
+
     Parameters
     ----------
     endpoint_url : str, optional
@@ -33,7 +34,7 @@ def factory(
         AWS access key ID (falls back to environment)
     secret_key : str, optional
         AWS secret access key (falls back to environment)
-        
+
     Returns
     -------
     Callable[[], AsyncContextManager]
@@ -44,25 +45,25 @@ def factory(
     region = region or os.getenv("AWS_REGION", "us-east-1")
     access_key = access_key or os.getenv("AWS_ACCESS_KEY_ID")
     secret_key = secret_key or os.getenv("AWS_SECRET_ACCESS_KEY")
-    
+
     if not (access_key and secret_key):
         raise RuntimeError(
             "AWS credentials missing. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "
             "environment variables or pass them as parameters."
         )
-    
+
     @asynccontextmanager
     async def _ctx():
         session = aioboto3.Session()
         async with session.client(
             "s3",
-            endpoint_url           = endpoint_url,
-            region_name            = region,
-            aws_access_key_id      = access_key,
-            aws_secret_access_key  = secret_key,
+            endpoint_url=endpoint_url,
+            region_name=region,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
         ) as client:
             yield client  # ← the channel to real S3 / MinIO
-    
+
     return _ctx
 
 
@@ -76,7 +77,7 @@ def client(
 ):
     """
     Return an aioboto3 S3 client context manager.
-    
+
     This is a convenience function for direct usage.
     The factory() function is preferred for use with ArtifactStore.
     """

@@ -7,6 +7,7 @@ This package provides a high-level interface for storing and retrieving
 artifacts across multiple storage backends (S3, IBM COS, filesystem, memory)
 with metadata caching and presigned URL support.
 """
+
 from __future__ import annotations
 from dotenv import load_dotenv
 
@@ -42,45 +43,42 @@ __version__ = "1.0.0"
 __all__ = [
     # Main class
     "ArtifactStore",
-    
     # Models
     "ArtifactEnvelope",
-    
     # Exceptions
-    "ArtifactStoreError", 
+    "ArtifactStoreError",
     "ArtifactNotFoundError",
     "ArtifactExpiredError",
     "ArtifactCorruptedError",
     "ProviderError",
     "SessionError",
-    
     # Operation modules (advanced usage)
     "CoreStorageOperations",
-    "PresignedURLOperations", 
+    "PresignedURLOperations",
     "MetadataOperations",
     "BatchOperations",
     "AdminOperations",
-    
     # Constants
     "_DEFAULT_TTL",
     "_DEFAULT_PRESIGN_EXPIRES",
 ]
 
+
 # Convenience aliases for common operations
 def create_store(**kwargs) -> ArtifactStore:
     """
     Convenience function to create an ArtifactStore with sensible defaults.
-    
+
     Parameters
     ----------
     **kwargs
         Passed to ArtifactStore constructor
-        
+
     Returns
     -------
     ArtifactStore
         Configured artifact store
-        
+
     Examples
     --------
     >>> store = create_store()  # Memory-based
@@ -90,15 +88,15 @@ def create_store(**kwargs) -> ArtifactStore:
 
 
 async def quick_store(
-    data: bytes, 
+    data: bytes,
     *,
     mime: str = "application/octet-stream",
     summary: str = "Quick upload",
-    **store_kwargs
+    **store_kwargs,
 ) -> tuple[ArtifactStore, str]:
     """
     Convenience function for quick one-off artifact storage.
-    
+
     Parameters
     ----------
     data : bytes
@@ -109,16 +107,16 @@ async def quick_store(
         Description
     **store_kwargs
         Passed to ArtifactStore constructor
-        
+
     Returns
     -------
     tuple
         (store_instance, artifact_id)
-        
+
     Examples
     --------
     >>> store, artifact_id = await quick_store(
-    ...     b"Hello world", 
+    ...     b"Hello world",
     ...     mime="text/plain",
     ...     storage_provider="filesystem"
     ... )
@@ -133,17 +131,17 @@ async def quick_store(
 def configure_logging(level: str = "INFO"):
     """
     Configure logging for the artifacts package.
-    
+
     Parameters
     ----------
     level : str
         Logging level (DEBUG, INFO, WARNING, ERROR)
     """
     import logging
-    
+
     logger = logging.getLogger("chuk_artifacts")
     logger.setLevel(getattr(logging, level.upper()))
-    
+
     if not logger.handlers:
         handler = logging.StreamHandler()
         formatter = logging.Formatter(

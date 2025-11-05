@@ -23,29 +23,32 @@ from datetime import datetime
 # Add the src directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+
 # Load .env
 def load_dotenv():
     env_file = Path(__file__).parent.parent / ".env"
     if env_file.exists():
         print(f"📁 Loading environment from: {env_file}")
-        with open(env_file, 'r') as f:
+        with open(env_file, "r") as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
                     key, value = key.strip(), value.strip().strip('"').strip("'")
                     if key not in os.environ:
                         os.environ[key] = value
         print("✅ Environment loaded from .env file")
 
+
 load_dotenv()
 
-import aioboto3
-from aioboto3.session import AioConfig
+import aioboto3  # noqa: E402
+from aioboto3.session import AioConfig  # noqa: E402
 
 
 class SignatureTestResult:
     """Container for signature test results."""
+
     def __init__(self, name, config, success=False, operations=None, error=None):
         self.name = name
         self.config = config
@@ -53,17 +56,17 @@ class SignatureTestResult:
         self.operations = operations or {}
         self.error = error
         self.score = 0  # Success score
-        
+
     def calculate_score(self):
         """Calculate success score based on working operations."""
         weights = {
-            'head_bucket': 1,
-            'list_objects': 2,
-            'get_object': 2,
-            'put_object': 4,
-            'delete_object': 1
+            "head_bucket": 1,
+            "list_objects": 2,
+            "get_object": 2,
+            "put_object": 4,
+            "delete_object": 1,
         }
-        
+
         score = 0
         for op, success in self.operations.items():
             if success:
@@ -72,14 +75,16 @@ class SignatureTestResult:
         return score
 
 
-async def test_signature_configuration(config_name, config, endpoint, region, access_key, secret_key, bucket):
+async def test_signature_configuration(
+    config_name, config, endpoint, region, access_key, secret_key, bucket
+):
     """Test a specific signature configuration comprehensively."""
     print(f"\n🔬 Testing: {config_name}")
     print(f"   Configuration: {config}")
-    
+
     result = SignatureTestResult(config_name, config)
     session = aioboto3.Session()
-    
+
     try:
         client_kwargs = {
             "service_name": "s3",
@@ -88,20 +93,19 @@ async def test_signature_configuration(config_name, config, endpoint, region, ac
             "aws_access_key_id": access_key,
             "aws_secret_access_key": secret_key,
         }
-        
+
         if config:
             client_kwargs["config"] = config
-        
+
         async with session.client(**client_kwargs) as client:
-            
             # Test 1: Head Bucket (basic connectivity)
             print("   📋 Testing head_bucket...")
             try:
                 await client.head_bucket(Bucket=bucket)
-                result.operations['head_bucket'] = True
+                result.operations["head_bucket"] = True
                 print("      ✅ SUCCESS")
             except Exception as e:
-                result.operations['head_bucket'] = False
+                result.operations["head_bucket"] = False
                 error_type = type(e).__name__
                 if "SignatureDoesNotMatch" in str(e):
                     error_type = "SignatureDoesNotMatch"
@@ -112,39 +116,39 @@ async def test_signature_configuration(config_name, config, endpoint, region, ac
                 print(f"      ❌ {error_type}")
                 result.error = error_type
                 return result
-            
+
             # Test 2: List Objects (read permission)
             print("   📂 Testing list_objects_v2...")
             try:
                 response = await client.list_objects_v2(Bucket=bucket, MaxKeys=1)
-                result.operations['list_objects'] = True
-                object_count = response.get('KeyCount', 0)
+                result.operations["list_objects"] = True
+                object_count = response.get("KeyCount", 0)
                 print(f"      ✅ SUCCESS ({object_count} objects)")
             except Exception as e:
-                result.operations['list_objects'] = False
+                result.operations["list_objects"] = False
                 error_type = type(e).__name__
                 if "AccessDenied" in str(e):
                     error_type = "AccessDenied"
                 print(f"      ❌ {error_type}")
-            
+
             # Test 3: Get Object (if any objects exist)
             print("   📥 Testing get_object...")
             try:
                 # First, list to find an object
                 list_response = await client.list_objects_v2(Bucket=bucket, MaxKeys=1)
-                if list_response.get('KeyCount', 0) > 0:
-                    existing_key = list_response['Contents'][0]['Key']
+                if list_response.get("KeyCount", 0) > 0:
+                    existing_key = list_response["Contents"][0]["Key"]
                     await client.head_object(Bucket=bucket, Key=existing_key)
-                    result.operations['get_object'] = True
+                    result.operations["get_object"] = True
                     print(f"      ✅ SUCCESS (tested with {existing_key})")
                 else:
                     print("      ⏭️ SKIPPED (no existing objects)")
-                    result.operations['get_object'] = None
+                    result.operations["get_object"] = None
             except Exception as e:
-                result.operations['get_object'] = False
+                result.operations["get_object"] = False
                 error_type = type(e).__name__
                 print(f"      ❌ {error_type}")
-            
+
             # Test 4: Put Object (write permission)
             print("   📤 Testing put_object...")
             test_key = f"signature-test/{config_name.replace(' ', '-').replace('(', '').replace(')', '')}-{datetime.now().strftime('%H%M%S')}.txt"
@@ -154,25 +158,25 @@ async def test_signature_configuration(config_name, config, endpoint, region, ac
                     Key=test_key,
                     Body=f"Signature test for {config_name}".encode(),
                     ContentType="text/plain",
-                    Metadata={"test": "signature", "config": config_name}
+                    Metadata={"test": "signature", "config": config_name},
                 )
-                result.operations['put_object'] = True
-                etag = put_response.get('ETag', 'unknown')
+                result.operations["put_object"] = True
+                etag = put_response.get("ETag", "unknown")
                 print(f"      ✅ SUCCESS (ETag: {etag})")
-                
+
                 # Test 5: Delete Object (cleanup and delete permission)
                 print("   🗑️ Testing delete_object...")
                 try:
                     await client.delete_object(Bucket=bucket, Key=test_key)
-                    result.operations['delete_object'] = True
+                    result.operations["delete_object"] = True
                     print("      ✅ SUCCESS")
                 except Exception as e:
-                    result.operations['delete_object'] = False
+                    result.operations["delete_object"] = False
                     error_type = type(e).__name__
                     print(f"      ❌ {error_type}")
-                
+
             except Exception as e:
-                result.operations['put_object'] = False
+                result.operations["put_object"] = False
                 error_type = type(e).__name__
                 if "AccessDenied" in str(e):
                     error_type = "AccessDenied"
@@ -180,15 +184,15 @@ async def test_signature_configuration(config_name, config, endpoint, region, ac
                     error_type = "SignatureDoesNotMatch"
                 print(f"      ❌ {error_type}")
                 result.error = error_type
-        
+
         result.calculate_score()
         result.success = result.score > 0
-        
+
     except Exception as e:
-        result.operations['connection'] = False
+        result.operations["connection"] = False
         result.error = type(e).__name__
         print(f"   ❌ Connection failed: {result.error}")
-    
+
     return result
 
 
@@ -196,86 +200,86 @@ async def run_comprehensive_signature_test():
     """Run comprehensive signature testing for IBM COS."""
     print("🔬 Comprehensive IBM COS Signature Version Tester")
     print("=" * 70)
-    
+
     # Get configuration
     access_key = os.getenv("AWS_ACCESS_KEY_ID")
     secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-    endpoint = os.getenv("IBM_COS_ENDPOINT", "https://s3.us-south.cloud-object-storage.appdomain.cloud")
+    endpoint = os.getenv(
+        "IBM_COS_ENDPOINT", "https://s3.us-south.cloud-object-storage.appdomain.cloud"
+    )
     region = os.getenv("AWS_REGION", "us-south")
     bucket = os.getenv("ARTIFACT_BUCKET", "mcp-bucket")
-    
-    print(f"📋 Test Configuration:")
+
+    print("📋 Test Configuration:")
     print(f"   Endpoint: {endpoint}")
     print(f"   Region: {region}")
     print(f"   Bucket: {bucket}")
     print(f"   Access Key: {access_key[:8] if access_key else 'NOT SET'}...")
-    
+
     if not (access_key and secret_key):
         print("\n❌ Cannot run tests - missing credentials")
         print("Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your .env file")
         return False, []
-    
+
     # Define test configurations
     test_configs = [
         # Core IBM COS configurations
-        ("Signature v2 + Path (IBM COS Classic)", AioConfig(
-            signature_version='s3',
-            s3={'addressing_style': 'path'}
-        )),
-        ("Signature v2 + Virtual (IBM COS Alt)", AioConfig(
-            signature_version='s3',
-            s3={'addressing_style': 'virtual'}
-        )),
-        
+        (
+            "Signature v2 + Path (IBM COS Classic)",
+            AioConfig(signature_version="s3", s3={"addressing_style": "path"}),
+        ),
+        (
+            "Signature v2 + Virtual (IBM COS Alt)",
+            AioConfig(signature_version="s3", s3={"addressing_style": "virtual"}),
+        ),
         # AWS-style configurations (some IBM COS instances support these)
-        ("Signature v4 + Path (AWS Style)", AioConfig(
-            signature_version='s3v4',
-            s3={'addressing_style': 'path'}
-        )),
-        ("Signature v4 + Virtual (AWS Default)", AioConfig(
-            signature_version='s3v4',
-            s3={'addressing_style': 'virtual'}
-        )),
-        
+        (
+            "Signature v4 + Path (AWS Style)",
+            AioConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+        ),
+        (
+            "Signature v4 + Virtual (AWS Default)",
+            AioConfig(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+        ),
         # Legacy/alternative configurations
-        ("Signature v2 Only", AioConfig(
-            signature_version='s3'
-        )),
-        ("Signature v4 Only", AioConfig(
-            signature_version='s3v4'
-        )),
-        
+        ("Signature v2 Only", AioConfig(signature_version="s3")),
+        ("Signature v4 Only", AioConfig(signature_version="s3v4")),
         # Default configurations
         ("aioboto3 Default", AioConfig()),
         ("No Config (boto3 default)", None),
-        
         # Regional variants (some regions may have different requirements)
-        ("v2 + Path + Region Override", AioConfig(
-            signature_version='s3',
-            s3={'addressing_style': 'path'},
-            region_name=region
-        )),
-        ("v4 + Path + Region Override", AioConfig(
-            signature_version='s3v4',
-            s3={'addressing_style': 'path'},
-            region_name=region
-        )),
+        (
+            "v2 + Path + Region Override",
+            AioConfig(
+                signature_version="s3",
+                s3={"addressing_style": "path"},
+                region_name=region,
+            ),
+        ),
+        (
+            "v4 + Path + Region Override",
+            AioConfig(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                region_name=region,
+            ),
+        ),
     ]
-    
+
     print(f"\n🧪 Running {len(test_configs)} signature configuration tests...")
     print("=" * 70)
-    
+
     results = []
-    
+
     for config_name, config in test_configs:
         result = await test_signature_configuration(
             config_name, config, endpoint, region, access_key, secret_key, bucket
         )
         results.append(result)
-        
+
         # Brief pause between tests to avoid rate limiting
         await asyncio.sleep(0.5)
-    
+
     return True, results
 
 
@@ -283,18 +287,18 @@ def analyze_results(results):
     """Analyze test results and provide recommendations."""
     print("\n📊 Signature Test Results Analysis")
     print("=" * 70)
-    
+
     # Sort by score (best first)
     results.sort(key=lambda r: r.score, reverse=True)
-    
+
     # Results table
     print(f"{'Configuration':<35} {'Score':<6} {'Operations':<50}")
     print("-" * 91)
-    
+
     working_configs = []
     partial_configs = []
     failed_configs = []
-    
+
     for result in results:
         # Format operations
         ops = []
@@ -304,11 +308,11 @@ def analyze_results(results):
             elif success is False:
                 ops.append(f"❌{op}")
             # None (skipped) operations not shown
-        
+
         ops_str = " ".join(ops)[:48]
-        
+
         print(f"{result.name:<35} {result.score:<6} {ops_str}")
-        
+
         # Categorize results
         if result.score >= 8:  # Can read and write
             working_configs.append(result)
@@ -316,51 +320,51 @@ def analyze_results(results):
             partial_configs.append(result)
         else:
             failed_configs.append(result)
-    
+
     # Analysis
-    print(f"\n🔍 Analysis:")
+    print("\n🔍 Analysis:")
     print(f"   ✅ Fully working: {len(working_configs)} configurations")
     print(f"   ⚠️ Partially working: {len(partial_configs)} configurations")
     print(f"   ❌ Failed: {len(failed_configs)} configurations")
-    
+
     # Recommendations
-    print(f"\n💡 Recommendations:")
-    
+    print("\n💡 Recommendations:")
+
     if working_configs:
         best = working_configs[0]
         print(f"🏆 BEST CONFIGURATION: {best.name}")
         print(f"   Score: {best.score}/10")
-        print(f"   Use this configuration for your IBM COS provider")
-        
+        print("   Use this configuration for your IBM COS provider")
+
         # Show config details
         if best.config:
-            print(f"   Configuration details:")
-            if hasattr(best.config, 'signature_version'):
+            print("   Configuration details:")
+            if hasattr(best.config, "signature_version"):
                 print(f"     signature_version = '{best.config.signature_version}'")
-            if hasattr(best.config, 's3') and best.config.s3:
-                addressing = best.config.s3.get('addressing_style')
+            if hasattr(best.config, "s3") and best.config.s3:
+                addressing = best.config.s3.get("addressing_style")
                 if addressing:
                     print(f"     addressing_style = '{addressing}'")
-        
+
         return best
-        
+
     elif partial_configs:
         best_partial = partial_configs[0]
         print(f"⚠️ PARTIAL SUCCESS: {best_partial.name}")
         print(f"   Score: {best_partial.score}/10")
-        print(f"   Signature works but limited by permissions")
-        print(f"   Focus on fixing bucket permissions rather than signature")
-        
+        print("   Signature works but limited by permissions")
+        print("   Focus on fixing bucket permissions rather than signature")
+
         return best_partial
-        
+
     else:
-        print(f"❌ NO WORKING CONFIGURATIONS FOUND")
-        print(f"   Possible issues:")
-        print(f"   - Invalid HMAC credentials")
-        print(f"   - Incorrect endpoint URL")
-        print(f"   - Network connectivity issues")
-        print(f"   - Bucket doesn't exist or wrong region")
-        
+        print("❌ NO WORKING CONFIGURATIONS FOUND")
+        print("   Possible issues:")
+        print("   - Invalid HMAC credentials")
+        print("   - Incorrect endpoint URL")
+        print("   - Network connectivity issues")
+        print("   - Bucket doesn't exist or wrong region")
+
         return None
 
 
@@ -368,16 +372,16 @@ def generate_provider_code(best_result):
     """Generate the correct provider code based on test results."""
     if not best_result or not best_result.config:
         return None
-    
+
     config = best_result.config
-    
+
     # Extract configuration
-    signature_version = getattr(config, 'signature_version', 's3')
-    addressing_style = 'path'  # default
-    
-    if hasattr(config, 's3') and config.s3:
-        addressing_style = config.s3.get('addressing_style', 'path')
-    
+    signature_version = getattr(config, "signature_version", "s3")
+    addressing_style = "path"  # default
+
+    if hasattr(config, "s3") and config.s3:
+        addressing_style = config.s3.get("addressing_style", "path")
+
     provider_code = f'''# -*- coding: utf-8 -*-
 # chuk_artifacts/providers/ibm_cos.py
 """
@@ -502,26 +506,28 @@ def client(
         )
     )
 '''
-    
+
     return provider_code
 
 
 async def save_provider_file(provider_code):
     """Save the generated provider code to file."""
     provider_file = Path("src/chuk_artifacts/providers/ibm_cos.py")
-    
+
     try:
         # Backup existing file
         if provider_file.exists():
-            backup_file = provider_file.with_suffix(f'.py.backup.{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+            backup_file = provider_file.with_suffix(
+                f'.py.backup.{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+            )
             provider_file.rename(backup_file)
             print(f"💾 Backed up existing provider to: {backup_file}")
-        
+
         # Write new provider
-        provider_file.write_text(provider_code, encoding='utf-8')
+        provider_file.write_text(provider_code, encoding="utf-8")
         print(f"✅ Created optimized provider: {provider_file}")
         return True
-        
+
     except Exception as e:
         print(f"❌ Failed to save provider: {e}")
         return False
@@ -529,31 +535,40 @@ async def save_provider_file(provider_code):
 
 def save_test_results(results):
     """Save test results to JSON for future reference."""
-    results_file = Path("diagnostics") / f"signature_test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    
+    results_file = (
+        Path("diagnostics")
+        / f"signature_test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
+
     try:
         results_data = []
         for result in results:
-            results_data.append({
-                'name': result.name,
-                'config': str(result.config) if result.config else None,
-                'success': result.success,
-                'score': result.score,
-                'operations': result.operations,
-                'error': result.error
-            })
-        
-        with open(results_file, 'w') as f:
-            json.dump({
-                'timestamp': datetime.now().isoformat(),
-                'endpoint': os.getenv("IBM_COS_ENDPOINT"),
-                'region': os.getenv("AWS_REGION"),
-                'bucket': os.getenv("ARTIFACT_BUCKET"),
-                'results': results_data
-            }, f, indent=2)
-        
+            results_data.append(
+                {
+                    "name": result.name,
+                    "config": str(result.config) if result.config else None,
+                    "success": result.success,
+                    "score": result.score,
+                    "operations": result.operations,
+                    "error": result.error,
+                }
+            )
+
+        with open(results_file, "w") as f:
+            json.dump(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "endpoint": os.getenv("IBM_COS_ENDPOINT"),
+                    "region": os.getenv("AWS_REGION"),
+                    "bucket": os.getenv("ARTIFACT_BUCKET"),
+                    "results": results_data,
+                },
+                f,
+                indent=2,
+            )
+
         print(f"💾 Saved test results to: {results_file}")
-        
+
     except Exception as e:
         print(f"⚠️ Could not save test results: {e}")
 
@@ -563,49 +578,49 @@ async def main():
     print("🔬 IBM COS Signature Version Tester")
     print("Systematically tests all signature configurations to find the optimal one")
     print("=" * 70)
-    
+
     # Run comprehensive tests
     success, results = await run_comprehensive_signature_test()
-    
+
     if not success:
         return False
-    
+
     # Analyze results
     best_result = analyze_results(results)
-    
+
     # Save results for reference
     save_test_results(results)
-    
+
     # Generate and save provider if we found a working config
     if best_result and best_result.score >= 8:
-        print(f"\n🔧 Generating Optimized Provider")
+        print("\n🔧 Generating Optimized Provider")
         print("=" * 70)
-        
+
         provider_code = generate_provider_code(best_result)
         if provider_code:
             saved = await save_provider_file(provider_code)
-            
+
             if saved:
-                print(f"\n🎉 SUCCESS!")
+                print("\n🎉 SUCCESS!")
                 print(f"✅ Found optimal configuration: {best_result.name}")
-                print(f"✅ Generated and saved optimized provider")
-                print(f"\n🚀 Next Steps:")
-                print(f"1. Test the optimized provider:")
-                print(f"   python diagnostics/quick_cos_check.py")
-                print(f"2. Run full test suite:")
-                print(f"   uv run diagnostics/ibm_cos_hmac_runner.py")
+                print("✅ Generated and saved optimized provider")
+                print("\n🚀 Next Steps:")
+                print("1. Test the optimized provider:")
+                print("   python diagnostics/quick_cos_check.py")
+                print("2. Run full test suite:")
+                print("   uv run diagnostics/ibm_cos_hmac_runner.py")
                 return True
-            
+
     elif best_result and best_result.score >= 3:
-        print(f"\n⚠️ Partial Success")
-        print(f"Signature configuration works for reading but write access is blocked")
-        print(f"This is likely a permissions issue, not a signature issue")
-        print(f"💡 Run: python diagnostics/ibm_cos_permissions_diagnostic.py")
-        
+        print("\n⚠️ Partial Success")
+        print("Signature configuration works for reading but write access is blocked")
+        print("This is likely a permissions issue, not a signature issue")
+        print("💡 Run: python diagnostics/ibm_cos_permissions_diagnostic.py")
+
     else:
-        print(f"\n❌ No Working Configuration Found")
-        print(f"Check your credentials, endpoint, and network connectivity")
-    
+        print("\n❌ No Working Configuration Found")
+        print("Check your credentials, endpoint, and network connectivity")
+
     return False
 
 

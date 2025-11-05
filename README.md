@@ -372,14 +372,6 @@ configure_ibm_cos(
     bucket="enterprise-artifacts",
     endpoint="https://s3.us-south.cloud-object-storage.appdomain.cloud"
 )
-
-# IAM Authentication
-from chuk_artifacts.config import configure_ibm_cos_iam
-configure_ibm_cos_iam(
-    api_key="your_ibm_api_key",
-    instance_crn="crn:v1:bluemix:public:cloud-object-storage:global:...",
-    bucket="enterprise-artifacts"
-)
 ```
 
 **Pros:**
@@ -442,7 +434,7 @@ export SESSION_REDIS_URL=redis://prod-redis:6379/0
 | Variable | Description | Default | Examples |
 |----------|-------------|---------|----------|
 | **Core Configuration** |
-| `ARTIFACT_PROVIDER` | Storage backend | `memory` | `s3`, `filesystem`, `ibm_cos`, `ibm_cos_iam` |
+| `ARTIFACT_PROVIDER` | Storage backend | `memory` | `s3`, `filesystem`, `ibm_cos` |
 | `ARTIFACT_BUCKET` | Bucket/container name | `artifacts` | `my-files`, `prod-storage` |
 | `ARTIFACT_SANDBOX_ID` | Sandbox identifier | Auto-generated | `myapp`, `prod-env`, `user-portal` |
 | `SESSION_PROVIDER` | Session metadata storage | `memory` | `redis` |
@@ -457,8 +449,6 @@ export SESSION_REDIS_URL=redis://prod-redis:6379/0
 | `S3_ENDPOINT_URL` | Custom S3 endpoint | - | `https://minio.example.com` |
 | **IBM COS Configuration** |
 | `IBM_COS_ENDPOINT` | IBM COS endpoint | Auto-detected | `https://s3.us-south.cloud-object-storage.appdomain.cloud` |
-| `IBM_COS_APIKEY` | IBM Cloud API key (IAM) | - | `abc123...` |
-| `IBM_COS_INSTANCE_CRN` | COS instance CRN (IAM) | - | `crn:v1:bluemix:public:...` |
 
 ## Configuration Examples
 

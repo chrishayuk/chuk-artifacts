@@ -5,15 +5,54 @@ build/
 dist/
 wheels/
 *.egg-info
+*.egg
 
 # Virtual environments
 .venv
+venv/
+env/
+ENV/
 
-# .env
+# Environment files
 .env
+.env.*
 
-# artifacts
+# Artifacts directory
 artifacts/
+test-artifacts/
+test-integration/
 
-# cache
+# Testing and coverage
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.cache/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# Linting
+.ruff_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+docs/_build/
+site/
+
+# Logs
+*.log

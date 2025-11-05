@@ -19,7 +19,12 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .store import ArtifactStore
 
-from .exceptions import ArtifactStoreError, ProviderError, SessionError, ArtifactNotFoundError
+from .exceptions import (
+    ArtifactStoreError,
+    ProviderError,
+    SessionError,
+    ArtifactNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +34,7 @@ _DEFAULT_TTL = 900
 class CoreStorageOperations:
     """Clean core storage operations with grid architecture."""
 
-    def __init__(self, artifact_store: 'ArtifactStore'):
+    def __init__(self, artifact_store: "ArtifactStore"):
         self.artifact_store = artifact_store
 
     async def store(
@@ -46,17 +51,17 @@ class CoreStorageOperations:
         """Store artifact with grid key generation."""
         if self.artifact_store._closed:
             raise ArtifactStoreError("Store is closed")
-        
+
         start_time = time.time()
         artifact_id = uuid.uuid4().hex
-        
+
         # Generate grid key using chuk_sessions
         key = self.artifact_store.generate_artifact_key(session_id, artifact_id)
-        
+
         try:
             # Store in object storage
             await self._store_with_retry(data, key, mime, filename, session_id)
-            
+
             # Build metadata record
             record = {
                 "artifact_id": artifact_id,
@@ -74,12 +79,12 @@ class CoreStorageOperations:
                 "storage_provider": self.artifact_store._storage_provider_name,
                 "session_provider": self.artifact_store._session_provider_name,
             }
-            
+
             # Store metadata
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, ttl, json.dumps(record))
-            
+
             duration_ms = int((time.time() - start_time) * 1000)
             logger.info(
                 "Artifact stored",
@@ -89,11 +94,11 @@ class CoreStorageOperations:
                     "key": key,
                     "bytes": len(data),
                     "duration_ms": duration_ms,
-                }
+                },
             )
-            
+
             return artifact_id
-            
+
         except Exception as e:
             logger.error(f"Storage failed for {artifact_id}: {e}")
             if "session" in str(e).lower():
@@ -114,7 +119,7 @@ class CoreStorageOperations:
     ) -> bool:
         """
         Update an artifact's content, metadata, filename, summary, or mime type.
-        
+
         Parameters
         ----------
         artifact_id : str
@@ -131,7 +136,7 @@ class CoreStorageOperations:
             New filename
         ttl : int, optional
             New TTL
-            
+
         Returns
         -------
         bool
@@ -140,8 +145,16 @@ class CoreStorageOperations:
         if self.artifact_store._closed:
             raise ArtifactStoreError("Store is closed")
 
-        if not any([new_data is not None, meta is not None, filename is not None, 
-                   summary is not None, mime is not None, ttl is not None]):
+        if not any(
+            [
+                new_data is not None,
+                meta is not None,
+                filename is not None,
+                summary is not None,
+                mime is not None,
+                ttl is not None,
+            ]
+        ):
             raise ValueError("At least one update parameter must be provided.")
 
         try:
@@ -159,7 +172,7 @@ class CoreStorageOperations:
                     filename or record.get("filename"),
                     session_id,
                 )
-                
+
                 # Update size and hash in metadata
                 record["bytes"] = len(new_data)
                 record["sha256"] = hashlib.sha256(new_data).hexdigest()
@@ -184,28 +197,29 @@ class CoreStorageOperations:
             async with session_ctx_mgr as session:
                 await session.setex(artifact_id, record["ttl"], json.dumps(record))
 
-            logger.info("Artifact updated successfully", extra={"artifact_id": artifact_id})
+            logger.info(
+                "Artifact updated successfully", extra={"artifact_id": artifact_id}
+            )
             return True
 
         except Exception as e:
             logger.error(f"Update failed for artifact {artifact_id}: {e}")
             raise ProviderError(f"Artifact update failed: {e}") from e
-            
+
     async def retrieve(self, artifact_id: str) -> bytes:
         """Retrieve artifact data."""
         if self.artifact_store._closed:
             raise ArtifactStoreError("Store is closed")
-        
+
         try:
             record = await self._get_record(artifact_id)
-            
+
             storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
                 response = await s3.get_object(
-                    Bucket=self.artifact_store.bucket, 
-                    Key=record["key"]
+                    Bucket=self.artifact_store.bucket, Key=record["key"]
                 )
-                
+
                 # Handle different response formats
                 if hasattr(response["Body"], "read"):
                     data = await response["Body"].read()
@@ -213,30 +227,27 @@ class CoreStorageOperations:
                     data = response["Body"]
                 else:
                     data = bytes(response["Body"])
-                
+
                 # Verify integrity
                 if "sha256" in record and record["sha256"]:
                     computed = hashlib.sha256(data).hexdigest()
                     if computed != record["sha256"]:
-                        raise ProviderError(f"SHA256 mismatch: {record['sha256']} != {computed}")
-                
+                        raise ProviderError(
+                            f"SHA256 mismatch: {record['sha256']} != {computed}"
+                        )
+
                 return data
-                
+
         except Exception as e:
             logger.error(f"Retrieval failed for {artifact_id}: {e}")
             raise ProviderError(f"Retrieval failed: {e}") from e
 
     async def _store_with_retry(
-        self, 
-        data: bytes, 
-        key: str, 
-        mime: str, 
-        filename: str, 
-        session_id: str
+        self, data: bytes, key: str, mime: str, filename: str, session_id: str
     ):
         """Store with retry logic."""
         last_exception = None
-        
+
         for attempt in range(self.artifact_store.max_retries):
             try:
                 storage_ctx_mgr = self.artifact_store._s3_factory()
@@ -253,13 +264,13 @@ class CoreStorageOperations:
                         },
                     )
                 return  # Success
-                
+
             except Exception as e:
                 last_exception = e
                 if attempt < self.artifact_store.max_retries - 1:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     await asyncio.sleep(wait_time)
-        
+
         raise last_exception
 
     async def _get_record(self, artifact_id: str) -> Dict[str, Any]:
@@ -270,10 +281,10 @@ class CoreStorageOperations:
                 raw = await session.get(artifact_id)
         except Exception as e:
             raise SessionError(f"Session error for {artifact_id}: {e}") from e
-        
+
         if raw is None:
             raise ArtifactNotFoundError(f"Artifact {artifact_id} not found")
-        
+
         try:
             return json.loads(raw)
         except json.JSONDecodeError as e:

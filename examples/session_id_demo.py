@@ -19,8 +19,8 @@ Scenarios
    `sandbox-xxxxxxxx`)
 
 Each step:
-• Allocates a fresh session  
-• Stores a tiny in-memory artifact  
+• Allocates a fresh session
+• Stores a tiny in-memory artifact
 • Prints out the sandbox ID, session ID, canonical prefix, generated key, and
   the key recorded in metadata.
 """
@@ -38,7 +38,10 @@ from chuk_artifacts.config import configure_memory
 # Helper for a single scenario
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def demo_case(title: str, *, sandbox_id: str | None = None, env_var: str | None = None):
+
+async def demo_case(
+    title: str, *, sandbox_id: str | None = None, env_var: str | None = None
+):
     """Run one sandbox-ID demo scenario and pretty-print the results."""
     print(f"\n{title}\n" + "-" * len(title))
 
@@ -58,7 +61,10 @@ async def demo_case(title: str, *, sandbox_id: str | None = None, env_var: str |
         # Allocate session + store artifact
         session_id = await store.create_session(user_id="demo-user")
         artifact_id = await store.store(
-            b"hello-sandbox", mime="text/plain", summary="demo-artifact", session_id=session_id
+            b"hello-sandbox",
+            mime="text/plain",
+            summary="demo-artifact",
+            session_id=session_id,
         )
 
         # Gather details
@@ -67,13 +73,15 @@ async def demo_case(title: str, *, sandbox_id: str | None = None, env_var: str |
         metadata = await store.metadata(artifact_id)
 
         # Print nicely-formatted block
-        print(textwrap.dedent(f"""
+        print(
+            textwrap.dedent(f"""
             Sandbox ID       : {store.sandbox_id}
             Session ID       : {session_id}
             Canonical prefix : {canonical_prefix}
             Generated key    : {artifact_key}
             Metadata['key']  : {metadata['key']}
-        """))
+        """)
+        )
 
     finally:
         await store.close()
@@ -82,6 +90,7 @@ async def demo_case(title: str, *, sandbox_id: str | None = None, env_var: str |
 # ─────────────────────────────────────────────────────────────────────────────
 # Main entry point running all scenarios sequentially
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def main():
     print("🧪  Sandbox-ID End-to-End Demonstration  🧪")

@@ -14,7 +14,6 @@ dependencies = [
   "pyyaml>=6.0.2",
   "aioboto3>=14.3.0",
   "redis>=6.2.0",
-  "ibm-cos-sdk>=2.13.5",
   "chuk-sessions>=0.3",
   "dotenv>=0.9.9",
   "asyncio>=3.4.3",
@@ -63,3 +62,13 @@ filterwarnings = [
 dev = [
     "pytest-asyncio>=1.0.0",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+no_implicit_optional = false
+check_untyped_defs = false
+disable_error_code = ["no-any-return", "misc", "assignment", "arg-type", "operator", "return-value"]

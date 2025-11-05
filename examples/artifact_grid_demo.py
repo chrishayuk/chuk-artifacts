@@ -12,6 +12,7 @@ backend.  Verifies:
 • final bucket key enumeration matches helpers
 • exits 0 on success, 1 on any failure
 """
+
 from __future__ import annotations
 import asyncio
 import os
@@ -21,9 +22,9 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())  # load .env before we instantiate anything
 
-from chuk_artifacts import ArtifactStore
-from chuk_artifacts.config import configure_memory
-from chuk_artifacts.exceptions import ArtifactStoreError
+from chuk_artifacts import ArtifactStore  # noqa: E402
+from chuk_artifacts.config import configure_memory  # noqa: E402
+from chuk_artifacts.exceptions import ArtifactStoreError  # noqa: E402
 
 try:
     import requests
@@ -33,8 +34,10 @@ except ImportError:
 
 
 def s3_configured() -> bool:
-    return all(os.getenv(v) for v in (
-        "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "ARTIFACT_BUCKET"))
+    return all(
+        os.getenv(v)
+        for v in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "ARTIFACT_BUCKET")
+    )
 
 
 async def run_demo() -> None:
@@ -53,18 +56,26 @@ async def run_demo() -> None:
     # 2. create store + session
     # ------------------------------------------------------------------
     store = ArtifactStore(sandbox_id="grid-demo", max_retries=1)
-    sess  = await store.create_session(user_id="tester")
+    sess = await store.create_session(user_id="tester")
     print(f"🆔  Session: {sess}")
 
     # ------------------------------------------------------------------
     # 3. store two artefacts (txt + png sentinel header)
     # ------------------------------------------------------------------
-    aid_txt = await store.store(b"hello grid", mime="text/plain",
-                                summary="demo-text", filename="demo.txt",
-                                session_id=sess)
-    aid_png = await store.store(b"\x89PNG\r\n\x1a\n", mime="image/png",
-                                summary="demo-png", filename="demo.png",
-                                session_id=sess)
+    aid_txt = await store.store(
+        b"hello grid",
+        mime="text/plain",
+        summary="demo-text",
+        filename="demo.txt",
+        session_id=sess,
+    )
+    aid_png = await store.store(
+        b"\x89PNG\r\n\x1a\n",
+        mime="image/png",
+        summary="demo-png",
+        filename="demo.png",
+        session_id=sess,
+    )
     print("💾  Stored artefacts:", aid_txt, aid_png)
 
     # ------------------------------------------------------------------
@@ -86,31 +97,31 @@ async def run_demo() -> None:
         mime="text/markdown",
         summary="Updated text file",
         meta={"updated": True},
-        filename="updated_demo.md"
+        filename="updated_demo.md",
     )
-    
+
     updated_back = await store.retrieve(aid_txt)
     assert updated_back == updated_txt
-    
+
     updated_meta = await store.metadata(aid_txt)
     assert updated_meta["mime"] == "text/markdown"
     assert updated_meta["summary"] == "Updated text file"
     assert updated_meta["meta"]["updated"] is True
     assert updated_meta["filename"] == "updated_demo.md"
     assert updated_meta["bytes"] == len(updated_txt)
-    
+
     print("🔄  Artifact update verified")
 
     # ------------------------------------------------------------------
     # 6. presign URLs & GET
     # ------------------------------------------------------------------
-    url_short  = await store.presign_short(aid_txt)
+    url_short = await store.presign_short(aid_txt)
     url_medium = await store.presign_medium(aid_png)
 
     def grid_from(url: str) -> str:
-        return re.sub(r'^.+?/(grid/.+?)(\?|$).*', r'\1', url)
+        return re.sub(r"^.+?/(grid/.+?)(\?|$).*", r"\1", url)
 
-    assert grid_from(url_short)  == store.generate_artifact_key(sess, aid_txt)
+    assert grid_from(url_short) == store.generate_artifact_key(sess, aid_txt)
     assert grid_from(url_medium) == store.generate_artifact_key(sess, aid_png)
 
     if backend == "s3":
@@ -153,8 +164,8 @@ async def run_demo() -> None:
         s3_factory = store._s3_factory
         async with s3_factory() as s3:
             resp = await s3.list_objects_v2(
-                Bucket=store.bucket,
-                Prefix=store.get_canonical_prefix(sess))
+                Bucket=store.bucket, Prefix=store.get_canonical_prefix(sess)
+            )
             keys = [obj["Key"] for obj in resp.get("Contents", [])]
             print("🗂️   Keys in bucket:")
             for k in keys:

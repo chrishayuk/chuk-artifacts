@@ -15,6 +15,7 @@ _ROOT = "grid"
 
 class GridError(ValueError):
     """Raised when grid path operations encounter invalid input."""
+
     pass
 
 
@@ -31,87 +32,87 @@ def _validate_component(component: str, name: str) -> None:
 def canonical_prefix(sandbox_id: str, session_id: str) -> str:
     """
     Generate canonical prefix for a sandbox/session combination.
-    
+
     Args:
         sandbox_id: Non-empty sandbox identifier
         session_id: Non-empty session identifier
-        
+
     Returns:
         Canonical prefix ending with '/'
-        
+
     Raises:
         GridError: If any component is invalid
     """
     _validate_component(sandbox_id, "sandbox_id")
     _validate_component(session_id, "session_id")
-    
+
     return f"{_ROOT}/{sandbox_id}/{session_id}/"
 
 
 def artifact_key(sandbox_id: str, session_id: str, artifact_id: str) -> str:
     """
     Generate artifact key for grid storage.
-    
+
     Args:
         sandbox_id: Non-empty sandbox identifier
-        session_id: Non-empty session identifier  
+        session_id: Non-empty session identifier
         artifact_id: Non-empty artifact identifier
-        
+
     Returns:
         Grid artifact key
-        
+
     Raises:
         GridError: If any component is invalid
     """
     _validate_component(sandbox_id, "sandbox_id")
     _validate_component(session_id, "session_id")
     _validate_component(artifact_id, "artifact_id")
-    
+
     return f"{_ROOT}/{sandbox_id}/{session_id}/{artifact_id}"
 
 
 def parse(key: str) -> Optional[Dict[str, Optional[str]]]:
     """
     Parse a grid key into components.
-    
+
     Args:
         key: Grid key to parse
-        
+
     Returns:
         Dictionary with components, or None if invalid
-        
+
     Examples:
         >>> parse("grid/sandbox/session/artifact")
         {'sandbox_id': 'sandbox', 'session_id': 'session', 'artifact_id': 'artifact', 'subpath': None}
-        
+
         >>> parse("grid/sandbox/session/artifact/sub/path")
         {'sandbox_id': 'sandbox', 'session_id': 'session', 'artifact_id': 'artifact', 'subpath': 'sub/path'}
-        
+
         >>> parse("invalid/key")
         None
     """
     if not isinstance(key, str):
         return None
-        
+
     parts = key.split("/")
-    
+
     # Must have at least 4 parts: root, sandbox, session, artifact
     if len(parts) < 4:
         return None
-        
+
     # Must start with correct root
     if parts[0] != _ROOT:
         return None
-    
+
     # Extract components
     sandbox_id = parts[1]
-    session_id = parts[2] 
+    session_id = parts[2]
     artifact_id = parts[3]
-    
+
     # Validate that core components are non-empty
     if not sandbox_id or not session_id or not artifact_id:
         return None
-    
+
     # Handle subpath
     subpath = None
     if len(parts) > 4:
@@ -120,7 +121,7 @@ def parse(key: str) -> Optional[Dict[str, Optional[str]]]:
         # Convert empty subpath to None for consistency
         if subpath == "":
             subpath = None
-    
+
     return {
         "sandbox_id": sandbox_id,
         "session_id": session_id,
@@ -132,10 +133,10 @@ def parse(key: str) -> Optional[Dict[str, Optional[str]]]:
 def is_valid_grid_key(key: str) -> bool:
     """
     Check if a string is a valid grid key.
-    
+
     Args:
         key: String to validate
-        
+
     Returns:
         True if valid grid key, False otherwise
     """
@@ -145,13 +146,13 @@ def is_valid_grid_key(key: str) -> bool:
 def validate_grid_key(key: str) -> Dict[str, Optional[str]]:
     """
     Validate and parse a grid key, raising an exception if invalid.
-    
+
     Args:
         key: Grid key to validate
-        
+
     Returns:
         Parsed grid components
-        
+
     Raises:
         GridError: If key is invalid
     """

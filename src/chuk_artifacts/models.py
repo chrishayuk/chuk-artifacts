@@ -13,10 +13,10 @@ class ArtifactEnvelope(BaseModel):
     """
 
     success: bool = True
-    artifact_id: str                        # opaque handle for look-ups
-    mime_type: str                          # e.g. "image/png", "text/csv"
-    bytes: int                              # size on disk
-    summary: str                            # human-readable description / alt
+    artifact_id: str  # opaque handle for look-ups
+    mime_type: str  # e.g. "image/png", "text/csv"
+    bytes: int  # size on disk
+    summary: str  # human-readable description / alt
     meta: Dict[str, Any] = Field(default_factory=dict)
 
     # Pydantic V2 configuration using ConfigDict

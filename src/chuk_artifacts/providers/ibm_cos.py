@@ -10,7 +10,8 @@ Tested on: 2025-06-20 16:03:24
 """
 
 from __future__ import annotations
-import os, aioboto3
+import os
+import aioboto3
 from aioboto3.session import AioConfig
 from typing import Optional, Callable, AsyncContextManager
 
@@ -24,7 +25,7 @@ def factory(
 ) -> Callable[[], AsyncContextManager]:
     """
     Return an async-context S3 client for IBM COS (HMAC only).
-    
+
     Tested configuration: Signature v2 + Virtual (IBM COS Alt)
     """
     endpoint_url = endpoint_url or os.getenv(
@@ -33,7 +34,7 @@ def factory(
     )
     access_key = access_key or os.getenv("AWS_ACCESS_KEY_ID")
     secret_key = secret_key or os.getenv("AWS_SECRET_ACCESS_KEY")
-    
+
     # Extract region from endpoint
     if endpoint_url:
         if "us-south" in endpoint_url:
@@ -48,8 +49,8 @@ def factory(
             region = "jp-tok"
         elif "au-syd" in endpoint_url:
             region = "au-syd"
-    
-    env_region = os.getenv('AWS_REGION')
+
+    env_region = os.getenv("AWS_REGION")
     if env_region:
         region = env_region
 
@@ -69,15 +70,12 @@ def factory(
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             config=AioConfig(
-                signature_version='s3',
-                s3={'addressing_style': 'virtual'},
+                signature_version="s3",
+                s3={"addressing_style": "virtual"},
                 read_timeout=60,
                 connect_timeout=30,
-                retries={
-                    'max_attempts': 3,
-                    'mode': 'adaptive'
-                }
-            )
+                retries={"max_attempts": 3, "mode": "adaptive"},
+            ),
         )
 
     return _make
@@ -92,12 +90,11 @@ def client(
 ):
     """Return an aioboto3 S3 client context manager for IBM COS."""
     session = aioboto3.Session()
-    
+
     endpoint_url = endpoint_url or os.getenv(
-        "IBM_COS_ENDPOINT",
-        "https://s3.us-south.cloud-object-storage.appdomain.cloud"
+        "IBM_COS_ENDPOINT", "https://s3.us-south.cloud-object-storage.appdomain.cloud"
     )
-    
+
     if not region:
         if "us-south" in endpoint_url:
             region = "us-south"
@@ -107,7 +104,7 @@ def client(
             region = "eu-gb"
         else:
             region = "us-south"
-    
+
     return session.client(
         "s3",
         endpoint_url=endpoint_url,
@@ -115,9 +112,9 @@ def client(
         aws_access_key_id=access_key or os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=secret_key or os.getenv("AWS_SECRET_ACCESS_KEY"),
         config=AioConfig(
-            signature_version='s3',
-            s3={'addressing_style': 'virtual'},
+            signature_version="s3",
+            s3={"addressing_style": "virtual"},
             read_timeout=60,
-            connect_timeout=30
-        )
+            connect_timeout=30,
+        ),
     )
