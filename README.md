@@ -4,12 +4,34 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/chuk-artifacts)](https://pypi.org/project/chuk-artifacts/)
 [![Python](https://img.shields.io/pypi/pyversions/chuk-artifacts.svg)](https://pypi.org/project/chuk-artifacts/)
-[![Tests](https://img.shields.io/badge/tests-742%20passing-success.svg)](#testing)
-[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-746%20passing-success.svg)](#testing)
+[![Coverage](https://img.shields.io/badge/coverage-93%25-brightgreen.svg)](#testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Async](https://img.shields.io/badge/async-await-green.svg)](https://docs.python.org/3/library/asyncio.html)
 
 CHUK Artifacts provides a unified, async API for storing and retrieving files ("artifacts") across local development and production cloud environments. Store ephemeral session files, persistent user documents, and shared resources—all with automatic access control, grid-based organization, and presigned upload/download URLs for secure client-side storage interaction.
+
+### 60-Second Tour
+
+```python
+from chuk_artifacts import ArtifactStore
+
+async with ArtifactStore() as store:
+    # 1. Store → Get artifact_id
+    artifact_id = await store.store(
+        b"Hello, World!",
+        mime="text/plain",
+        summary="My first artifact"
+    )
+
+    # 2. Presign → Client uploads/downloads directly
+    download_url = await store.presign(artifact_id, expires=3600)
+
+    # 3. Retrieve → Get data back
+    data = await store.retrieve(artifact_id)
+```
+
+**Three steps. Zero config. Production-ready.**
 
 ---
 
@@ -149,7 +171,7 @@ CHUK Artifacts **is**:
 **CHUK Artifacts provides:**
 - ✅ **Three storage scopes** - Session (ephemeral), User (persistent), Sandbox (shared)
 - ✅ **Access control** - User-based permissions with automatic enforcement
-- ✅ **Search functionality** - Find artifacts by user, MIME type, or custom metadata
+- ✅ **Filtering & listing** - Find artifacts by user, MIME type, or custom metadata (not full-text search)
 - ✅ **Predictable grid paths** - Scope-based organization for infinite scale
 - ✅ **Unified API** - Same code works across Memory, Filesystem, S3, IBM COS
 - ✅ **Presigned URLs** - Secure direct upload/download without exposing credentials
@@ -440,11 +462,11 @@ except ArtifactStoreError:
 
 CHUK Artifacts supports three storage scopes with different lifecycles and access patterns:
 
-| Scope | Lifecycle | Use Case | Access Control |
-|-------|-----------|----------|----------------|
-| **session** | Ephemeral (15min-24h) | Temporary work files, caches | Session-isolated |
-| **user** | Persistent (long/unlimited) | User's saved files, documents | User-owned |
-| **sandbox** | Shared (long/unlimited) | Templates, shared resources | Read-only (admin writes) |
+| Scope | Lifecycle | TTL Default | Use Case | Access Control |
+|-------|-----------|-------------|----------|----------------|
+| **session** | Ephemeral (15min-24h) | 900s (15min) | Temporary work files, caches | Session-isolated |
+| **user** | Persistent (long/unlimited) | 31536000s (1 year) | User's saved files, documents | User-owned |
+| **sandbox** | Shared (long/unlimited) | No expiry | Templates, shared resources | Read-only (admin writes) |
 
 ### Session-Scoped Storage (Default)
 
@@ -483,7 +505,7 @@ document_id = await store.store(
 # Retrieve from any session - just need user_id
 data = await store.retrieve(document_id, user_id="alice")
 
-# Search all user's artifacts
+# List all user's artifacts (filtered by scope/user)
 alice_files = await store.search(user_id="alice", scope="user")
 
 # Filter by MIME type
@@ -500,6 +522,8 @@ q4_docs = await store.search(
     meta_filter={"quarter": "Q4"}
 )
 ```
+
+> **Note:** `.search()` currently performs **filtered listing** (scope, MIME prefix, metadata equality checks). Full-text search indexing (Typesense/Elasticsearch) is planned for Phase 3.
 
 ### Sandbox-Scoped Storage (Shared)
 
@@ -812,6 +836,7 @@ Streaming operations allow you to upload and download large files without loadin
 Upload large files efficiently with progress callbacks:
 
 ```python
+import os
 from chuk_artifacts import ArtifactStore, StreamUploadRequest
 
 async with ArtifactStore() as store:
@@ -839,6 +864,36 @@ async with ArtifactStore() as store:
     )
 
     # Upload with streaming
+    artifact_id = await store.stream_upload(request)
+    print(f"Uploaded: {artifact_id}")
+```
+
+> **Note:** The example above uses synchronous I/O (`open()` / `.read()`) inside an async generator. For true async file I/O, use `aiofiles` or run blocking I/O in a thread pool.
+
+**Alternative with `aiofiles`:**
+
+```python
+import os
+import aiofiles
+from chuk_artifacts import ArtifactStore, StreamUploadRequest
+
+async with ArtifactStore() as store:
+    # Async file reading with aiofiles
+    async def file_chunks():
+        async with aiofiles.open("large_video.mp4", "rb") as f:
+            while chunk := await f.read(65536):
+                yield chunk
+
+    request = StreamUploadRequest(
+        data_stream=file_chunks(),
+        mime="video/mp4",
+        summary="Product demo video",
+        filename="demo.mp4",
+        user_id="alice",
+        content_length=os.path.getsize("large_video.mp4"),
+        progress_callback=lambda sent, total: print(f"Progress: {(sent/total)*100:.1f}%") if total else None
+    )
+
     artifact_id = await store.stream_upload(request)
     print(f"Uploaded: {artifact_id}")
 ```
@@ -1362,13 +1417,16 @@ volumes:
 ```python
 # API signature:
 # presign(file_id: str, *, expires: int = 3600) -> str
-# Wrappers: presign_short (15m), presign_medium (60m), presign_long (24h)
 
-# Different durations
-url = await store.presign(file_id, expires=3600)  # Custom: 1 hour
-short = await store.presign_short(file_id)        # 15 minutes
-medium = await store.presign_medium(file_id)      # 1 hour (default)
-long = await store.presign_long(file_id)          # 24 hours
+# Recommended: Use presign(expires=...) for clarity and consistency
+url = await store.presign(file_id, expires=3600)   # 1 hour
+url = await store.presign(file_id, expires=900)    # 15 minutes
+url = await store.presign(file_id, expires=86400)  # 24 hours
+
+# Legacy wrappers (sugar for presign with fixed durations):
+short = await store.presign_short(file_id)   # Equivalent to presign(expires=900)
+medium = await store.presign_medium(file_id)  # Equivalent to presign(expires=3600)
+long = await store.presign_long(file_id)     # Equivalent to presign(expires=86400)
 ```
 
 ### Rich Metadata
@@ -1476,6 +1534,92 @@ except ArtifactStoreError as e:
 
 ---
 
+## Consistency & Concurrency
+
+CHUK Artifacts provides **strong consistency** guarantees and **ETag-based concurrency control** for production applications.
+
+### ETag Support
+
+Every artifact has an **ETag** (entity tag) for version tracking:
+
+```python
+# Get ETag from metadata
+metadata = await store.metadata(artifact_id)
+print(f"ETag: {metadata.get('etag')}")  # e.g., "abc123..."
+
+# Use for caching
+response.headers["ETag"] = metadata.get("etag")
+response.headers["Cache-Control"] = "private, max-age=3600"
+```
+
+### Conditional Updates
+
+Use `if_match` for **optimistic locking** to prevent lost updates:
+
+```python
+# Read current version
+metadata = await store.metadata(file_id)
+current_etag = metadata.get("etag")
+
+# Conditional update - only succeeds if ETag matches
+try:
+    await store.update_file(
+        file_id,
+        data=b"new content",
+        if_match=current_etag  # Prevents lost updates
+    )
+    print("✓ Updated successfully")
+except PreconditionFailedError:
+    # Someone else modified the file
+    print("✗ Conflict detected - refresh and retry")
+    # Fetch latest version and retry
+    ...
+```
+
+### Multipart Upload ETags
+
+Each part in a multipart upload has its own ETag:
+
+```python
+# Upload parts and collect ETags
+parts = []
+for part_num in range(1, num_parts + 1):
+    url = await store.get_part_upload_url(upload_id, part_num)
+    # Client uploads to URL and receives ETag in response headers
+    etag = response.headers["ETag"]
+    parts.append(MultipartUploadPart(PartNumber=part_num, ETag=etag))
+
+# Complete upload with all part ETags
+complete_request = MultipartUploadCompleteRequest(
+    upload_id=upload_id,
+    parts=parts
+)
+artifact_id = await store.complete_multipart_upload(complete_request)
+
+# Final object has its own ETag
+final_metadata = await store.metadata(artifact_id)
+print(f"Final ETag: {final_metadata.get('etag')}")
+```
+
+### Consistency Guarantees
+
+| Operation | Consistency | Notes |
+|-----------|-------------|-------|
+| `store()` | **Strong** | Immediate visibility after write |
+| `retrieve()` | **Strong** | Always returns latest version |
+| `update_file(if_match=...)` | **Strong** | Returns `412 Precondition Failed` on conflict |
+| `metadata()` | **Strong** (with Redis) | Sub-ms read from cache |
+| Presigned URLs | **Eventual** | S3 eventually consistent for overwrite PUTs |
+| Multipart completion | **Strong** | Final object immediately visible |
+
+**Best practices:**
+- Use `if_match` for critical updates (user profiles, configs)
+- Implement retry with exponential backoff for `PreconditionFailedError`
+- Cache ETags on client side for conditional requests
+- For highest consistency, use direct `retrieve()` instead of presigned URLs after recent writes
+
+---
+
 ## Security
 
 ### Security Posture
@@ -1486,21 +1630,94 @@ except ArtifactStoreError as e:
 - ✅ **Presigned URL scoping** - Short-lived URLs (15min-24h)
 - ✅ **Grid path validation** - No directory traversal attacks
 
-**Production recommendations:**
+### Production Security Playbook
 
-1. **Enable server-side encryption:**
-   ```bash
-   # S3: Use SSE-S3 or SSE-KMS
-   export S3_SSE_ALGORITHM=AES256
+**1. Enable server-side encryption:**
 
-   # IBM COS: Encryption enabled by default
-   ```
+```bash
+# Option A: SSE-S3 (AWS-managed keys)
+export S3_SSE_ALGORITHM=AES256
 
-2. **Use IAM roles** (no hardcoded credentials):
-   ```python
-   # AWS ECS/Lambda/EC2 with IAM role - no credentials needed!
-   store = ArtifactStore(storage_provider="s3")
-   ```
+# Option B: SSE-KMS (customer-managed keys, recommended)
+export S3_SSE_ALGORITHM=aws:kms
+export S3_SSE_KMS_KEY_ID=arn:aws:kms:us-east-1:123456789:key/abc-def
+```
+
+**2. S3 Bucket Policy (deny non-TLS, deny public access):**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::my-artifacts-bucket",
+        "arn:aws:s3:::my-artifacts-bucket/*"
+      ],
+      "Condition": {
+        "Bool": {"aws:SecureTransport": "false"}
+      }
+    },
+    {
+      "Sid": "DenyPublicACLs",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": ["s3:PutObjectAcl", "s3:PutBucketAcl"],
+      "Resource": [
+        "arn:aws:s3:::my-artifacts-bucket",
+        "arn:aws:s3:::my-artifacts-bucket/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-acl": ["public-read", "public-read-write"]
+        }
+      }
+    }
+  ]
+}
+```
+
+**3. Minimal IAM Policy (presign-only role):**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ArtifactStoreAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:CreateMultipartUpload",
+        "s3:UploadPart",
+        "s3:CompleteMultipartUpload",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-artifacts-bucket",
+        "arn:aws:s3:::my-artifacts-bucket/grid/*"
+      ]
+    }
+  ]
+}
+```
+
+**4. Use IAM roles (no hardcoded credentials):**
+
+```python
+# AWS ECS/Lambda/EC2 with IAM role - no credentials needed!
+store = ArtifactStore(storage_provider="s3")
+
+# Kubernetes with IRSA (IAM Roles for Service Accounts)
+# No environment variables needed - credentials from pod metadata
+```
 
 3. **Session isolation best practices:**
    ```python
@@ -1559,11 +1776,22 @@ Typical performance with S3 + Redis:
 - Concurrency: 128 concurrent tasks
 - Client: aioboto3 with connection pooling
 - Results: Average over 5 runs
-- Reproducible: `./benchmarks/run.py` (see [benchmarks/](https://github.com/chrishayuk/chuk-artifacts/tree/main/benchmarks) directory)
+- Reproducible: `python -m benchmarks.run` (see [benchmarks/](https://github.com/chrishayuk/chuk-artifacts/tree/main/benchmarks) directory)
+
+**Provider performance matrix:**
+
+| Provider | Storage | Latency | Throughput | Best For |
+|----------|---------|---------|------------|----------|
+| **S3** | Remote | 10-50ms | 3,000+ ops/s | Production, scale |
+| **VFS-S3** | Remote (via VFS) | 10-50ms | 2,500+ ops/s | Production with VFS features |
+| **Filesystem** | Local disk | 1-5ms | 5,000+ ops/s | Development, fast local caching |
+| **Memory** | In-memory | <1ms | 10,000+ ops/s | Testing, ephemeral caches |
+
+> **Note:** Benchmarks run on dedicated AWS infrastructure. Real-world performance varies by region, network, instance type, and workload patterns.
 
 **Performance tips:**
 - ✅ Use batch operations for multiple files
-- ✅ Reuse store instances (connection pooling)
+- ✅ **Reuse `ArtifactStore()` instances** (connection pooling across requests)
 - ✅ Use presigned URLs for large files (>5MB)
 - ✅ Choose appropriate TTL values (shorter = faster cleanup)
 - ✅ Enable Redis for production (sub-millisecond metadata access)
@@ -1778,21 +2006,22 @@ expired = await store.cleanup_expired_sessions()
 ✅ **Phase 1 Complete (v0.5)**:
 - Scope-based storage (session, user, sandbox)
 - Access control with user_id
-- Search functionality for user artifacts
+- Filtered listing by user, MIME type, and metadata
 - **VFS integration** - [chuk-virtual-fs](https://github.com/chrishayuk/chuk-virtual-fs) as unified storage layer
 - **SQLite support** - Structured storage via VFS
 - 95% test coverage
 
 ✅ **Phase 2 Complete (v0.6)**:
 - ✅ **Streaming uploads/downloads** - Memory-efficient large file handling
+- ✅ **Multipart presigned uploads** - Large file uploads (>5MB) with resumable parts
 - ✅ **Progress callbacks** - Real-time upload/download tracking
 - ✅ **Async generators** - Native Python async/await streaming
-- ✅ **Access control** - Streaming respects all scope rules
-- 715 tests passing (87-90% coverage on streaming modules)
+- ✅ **Access control** - Streaming and multipart respect all scope rules
+- 746 tests passing (93% coverage)
 
 **Phase 3 (Planned)**:
 - [ ] **Virtual mounts** - Mix providers per scope (VFS feature)
-- [ ] **Metadata search index** - Elasticsearch/Typesense integration
+- [ ] **Full-text search index** - Elasticsearch/Typesense for content/metadata search (beyond current filtered listing)
 - [ ] **Share links** - Temporary shareable URLs with expiry
 - [ ] **User quotas** - Storage limits and usage tracking (VFS security profiles)
 
