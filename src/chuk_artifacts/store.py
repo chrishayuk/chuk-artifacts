@@ -777,6 +777,8 @@ class ArtifactStore:
         user_id: str = None,
         meta: Dict[str, Any] = None,
         encoding: str = "utf-8",
+        scope: str = "session",
+        ttl: int = _DEFAULT_TTL,
     ) -> str:
         """Write content to file."""
         if isinstance(content, str):
@@ -792,6 +794,8 @@ class ArtifactStore:
             session_id=session_id,
             user_id=user_id,
             meta=meta,
+            scope=scope,
+            ttl=ttl,
         )
 
     async def read_file(

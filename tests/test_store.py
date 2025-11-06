@@ -569,6 +569,8 @@ class TestFileOperations:
                 session_id="session-123",
                 user_id=None,
                 meta=None,
+                scope="session",
+                ttl=900,
             )
             assert result == "artifact-123"
 
@@ -591,6 +593,8 @@ class TestFileOperations:
                 session_id=None,
                 user_id=None,
                 meta=None,
+                scope="session",
+                ttl=900,
             )
             assert result == "artifact-123"
 
