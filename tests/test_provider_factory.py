@@ -58,13 +58,27 @@ class TestProviderFactoryBuiltins:
 
     def test_s3_provider(self):
         """Test S3 provider resolution."""
-        with patch.dict(os.environ, {"ARTIFACT_PROVIDER": "s3"}):
+        with patch.dict(
+            os.environ,
+            {
+                "ARTIFACT_PROVIDER": "s3",
+                "AWS_ACCESS_KEY_ID": "test_key",
+                "AWS_SECRET_ACCESS_KEY": "test_secret",
+            },
+        ):
             factory = factory_for_env()
             assert callable(factory)
 
     def test_ibm_cos_provider(self):
         """Test IBM COS provider resolution."""
-        with patch.dict(os.environ, {"ARTIFACT_PROVIDER": "ibm_cos"}):
+        with patch.dict(
+            os.environ,
+            {
+                "ARTIFACT_PROVIDER": "ibm_cos",
+                "AWS_ACCESS_KEY_ID": "test_key",
+                "AWS_SECRET_ACCESS_KEY": "test_secret",
+            },
+        ):
             factory = factory_for_env()
             assert callable(factory)
 
@@ -250,7 +264,13 @@ class TestProviderFactoryEdgeCases:
         ]
 
         for input_name, expected_provider in test_cases:
-            with patch.dict(os.environ, {"ARTIFACT_PROVIDER": input_name}):
+            env_vars = {"ARTIFACT_PROVIDER": input_name}
+            # Add AWS credentials for S3 and IBM COS
+            if expected_provider in ["s3", "ibm_cos"]:
+                env_vars["AWS_ACCESS_KEY_ID"] = "test_key"
+                env_vars["AWS_SECRET_ACCESS_KEY"] = "test_secret"
+
+            with patch.dict(os.environ, env_vars):
                 # Should not raise an error
                 factory = factory_for_env()
                 assert callable(factory)
@@ -298,7 +318,14 @@ class TestProviderFactoryIntegration:
     )
     def test_s3_provider_integration(self):
         """Test that S3 provider actually works."""
-        with patch.dict(os.environ, {"ARTIFACT_PROVIDER": "s3"}):
+        with patch.dict(
+            os.environ,
+            {
+                "ARTIFACT_PROVIDER": "s3",
+                "AWS_ACCESS_KEY_ID": "test_key",
+                "AWS_SECRET_ACCESS_KEY": "test_secret",
+            },
+        ):
             factory = factory_for_env()
 
             # Should be able to call the factory
@@ -325,7 +352,13 @@ class TestProviderFactoryDocumentation:
         ]
 
         for provider in documented_providers:
-            with patch.dict(os.environ, {"ARTIFACT_PROVIDER": provider}):
+            env_vars = {"ARTIFACT_PROVIDER": provider}
+            # Add AWS credentials for providers that need them
+            if provider in ["s3", "ibm_cos", "vfs-s3"]:
+                env_vars["AWS_ACCESS_KEY_ID"] = "test_key"
+                env_vars["AWS_SECRET_ACCESS_KEY"] = "test_secret"
+
+            with patch.dict(os.environ, env_vars):
                 # Should not raise an error
                 factory = factory_for_env()
                 assert callable(factory)

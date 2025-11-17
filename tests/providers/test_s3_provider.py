@@ -8,7 +8,7 @@ Tests the S3 provider functionality with mocking and real S3 integration.
 import pytest
 import asyncio
 import os
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from contextlib import asynccontextmanager
 
 # Test imports
@@ -25,8 +25,15 @@ class TestS3ProviderFactory:
 
     def test_factory_creation(self):
         """Test basic factory creation."""
-        s3_factory = factory()
-        assert callable(s3_factory)
+        with patch.dict(
+            os.environ,
+            {
+                "AWS_ACCESS_KEY_ID": "test_key",
+                "AWS_SECRET_ACCESS_KEY": "test_secret",
+            },
+        ):
+            s3_factory = factory()
+            assert callable(s3_factory)
 
     def test_factory_with_parameters(self):
         """Test factory creation with custom parameters."""

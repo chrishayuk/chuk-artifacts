@@ -77,6 +77,8 @@ class TestArtifactStoreInitialization:
             "ARTIFACT_PROVIDER": "s3",
             "SESSION_PROVIDER": "memory",  # Use available provider
             "ARTIFACT_SANDBOX_ID": "env-sandbox",
+            "AWS_ACCESS_KEY_ID": "test_key",
+            "AWS_SECRET_ACCESS_KEY": "test_secret",
         },
     )
     def test_init_with_env_vars(self):
@@ -1485,7 +1487,13 @@ class TestParameterValidationAndTypes:
     def test_initialization_with_env_override(self):
         """Test that environment variables override None values."""
         with patch.dict(
-            os.environ, {"ARTIFACT_PROVIDER": "s3", "SESSION_PROVIDER": "memory"}
+            os.environ,
+            {
+                "ARTIFACT_PROVIDER": "s3",
+                "SESSION_PROVIDER": "memory",
+                "AWS_ACCESS_KEY_ID": "test_key",
+                "AWS_SECRET_ACCESS_KEY": "test_secret",
+            },
         ):
             store = ArtifactStore(
                 bucket="test-bucket",
