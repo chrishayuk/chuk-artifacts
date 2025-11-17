@@ -115,7 +115,7 @@ class _FilesystemClient:
         meta_path = self._get_metadata_path(object_path)
 
         # Generate ETag (MD5 hash like S3)
-        etag = hashlib.md5(Body).hexdigest()
+        etag = hashlib.md5(Body, usedforsecurity=False).hexdigest()
 
         async with self._lock:
             await self._ensure_parent_dir(object_path)

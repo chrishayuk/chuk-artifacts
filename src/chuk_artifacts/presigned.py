@@ -391,7 +391,9 @@ class PresignedURLOperations:
                 "filename": request.filename,
                 "mime_type": request.mime_type,
                 "user_id": request.user_id,
-                "scope": request.scope,
+                "scope": request.scope.value
+                if hasattr(request.scope, "value")
+                else request.scope,  # Convert enum to string
                 "ttl": request.ttl,
                 "meta": request.meta or {},
                 "status": "uploading",

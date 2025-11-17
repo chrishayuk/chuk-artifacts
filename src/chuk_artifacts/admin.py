@@ -15,6 +15,12 @@ from typing import Any, Dict, TYPE_CHECKING
 if TYPE_CHECKING:
     from .store import ArtifactStore
 
+from .types import (
+    ValidationResponse,
+    ProviderStatus,
+    OperationStatus,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,11 +34,11 @@ class AdminOperations:
         # backward-compat/consistency with other ops modules
         self.store = artifact_store
 
-    async def validate_configuration(self) -> Dict[str, Any]:
+    async def validate_configuration(self) -> ValidationResponse:
         """Validate store configuration and connectivity."""
-        results = {"timestamp": datetime.utcnow().isoformat() + "Z"}
-
         # Test session provider
+        session_status = OperationStatus.UNKNOWN
+        session_message = None
         try:
             session_ctx_mgr = self.artifact_store._session_factory()
             async with session_ctx_mgr as session:
@@ -42,41 +48,32 @@ class AdminOperations:
                 value = await session.get(test_key)
 
                 if value == "test_value":
-                    results["session"] = {
-                        "status": "ok",
-                        "provider": self.artifact_store._session_provider_name,
-                    }
+                    session_status = OperationStatus.OK  # Use OK for backward compat
                 else:
-                    results["session"] = {
-                        "status": "error",
-                        "message": "Session store test failed",
-                        "provider": self.artifact_store._session_provider_name,
-                    }
+                    session_status = (
+                        OperationStatus.ERROR
+                    )  # Use ERROR for backward compat
+                    session_message = "Session store test failed"
         except Exception as e:
-            results["session"] = {
-                "status": "error",
-                "message": str(e),
-                "provider": self.artifact_store._session_provider_name,
-            }
+            session_status = OperationStatus.ERROR  # Use ERROR for backward compat
+            session_message = str(e)
 
         # Test storage provider
+        storage_status = OperationStatus.UNKNOWN
+        storage_message = None
+        storage_details = {}
         try:
             storage_ctx_mgr = self.artifact_store._s3_factory()
             async with storage_ctx_mgr as s3:
                 await s3.head_bucket(Bucket=self.artifact_store.bucket)
-            results["storage"] = {
-                "status": "ok",
-                "bucket": self.artifact_store.bucket,
-                "provider": self.artifact_store._storage_provider_name,
-            }
+            storage_status = OperationStatus.OK  # Use OK for backward compat
+            storage_details["bucket"] = self.artifact_store.bucket
         except Exception as e:
-            results["storage"] = {
-                "status": "error",
-                "message": str(e),
-                "provider": self.artifact_store._storage_provider_name,
-            }
+            storage_status = OperationStatus.ERROR  # Use ERROR for backward compat
+            storage_message = str(e)
 
-        # Test session manager (chuk_sessions)
+        # Test session manager (chuk_sessions) - backward compat
+        session_manager_status = {}
         try:
             # Try to allocate a test session
             test_session = await self.artifact_store._session_manager.allocate_session(
@@ -90,20 +87,49 @@ class AdminOperations:
             await self.artifact_store._session_manager.delete_session(test_session)
 
             if is_valid:
-                results["session_manager"] = {
+                session_manager_status = {
                     "status": "ok",
                     "sandbox_id": self.artifact_store.sandbox_id,
                     "test_session": test_session,
                 }
             else:
-                results["session_manager"] = {
+                session_manager_status = {
                     "status": "error",
                     "message": "Session validation failed",
                 }
         except Exception as e:
-            results["session_manager"] = {"status": "error", "message": str(e)}
+            session_manager_status = {"status": "error", "message": str(e)}
 
-        return results
+        # Determine overall status
+        if (
+            session_status == OperationStatus.OK
+            and storage_status == OperationStatus.OK
+        ):
+            overall = OperationStatus.SUCCESS
+        elif (
+            session_status == OperationStatus.ERROR
+            or storage_status == OperationStatus.ERROR
+        ):
+            overall = OperationStatus.ERROR
+        else:
+            overall = OperationStatus.UNKNOWN
+
+        return ValidationResponse(
+            storage=ProviderStatus(
+                status=storage_status,
+                provider=self.artifact_store._storage_provider_name,
+                message=storage_message,
+                details=storage_details,
+            ),
+            session=ProviderStatus(
+                status=session_status,
+                provider=self.artifact_store._session_provider_name,
+                message=session_message,
+            ),
+            overall=overall,
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            session_manager=session_manager_status,
+        )
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get storage statistics."""

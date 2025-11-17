@@ -43,7 +43,7 @@ def factory_for_env() -> Callable[[], AsyncContextManager]:
     if provider in ("vfs-filesystem", "vfs_filesystem", "vfs-fs", "vfs_fs"):
         from .providers import vfs_adapter
 
-        root_path = os.getenv("ARTIFACT_FS_ROOT", "/tmp/artifacts")
+        root_path = os.getenv("ARTIFACT_FS_ROOT", "/tmp/artifacts")  # nosec B108
         return vfs_adapter.factory(provider="filesystem", root_path=root_path)
 
     if provider in ("vfs-s3", "vfs_s3"):

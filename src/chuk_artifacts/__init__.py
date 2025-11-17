@@ -15,12 +15,46 @@ from dotenv import load_dotenv
 from .store import ArtifactStore
 from .models import (
     ArtifactEnvelope,
+    ArtifactMetadata,
     AccessContext,
+    GridKeyComponents,
     StreamUploadRequest,
     StreamDownloadRequest,
     MultipartUploadInitRequest,
     MultipartUploadCompleteRequest,
     MultipartUploadPart,
+)
+
+# Type definitions and enums
+from .types import (
+    # Enums
+    StorageScope,
+    StorageProvider,
+    SessionProvider,
+    OperationStatus,
+    # Constants
+    DEFAULT_TTL,
+    DEFAULT_PRESIGN_EXPIRES,
+    DEFAULT_SESSION_TTL_HOURS,
+    DEFAULT_BUCKET,
+    DEFAULT_SANDBOX_PREFIX,
+    # Response Models
+    ProviderStatus,
+    ValidationResponse,
+    SessionStats,
+    StorageStats,
+    StatsResponse,
+    SessionInfo,
+    SandboxInfo,
+    PresignedUploadResponse,
+    MultipartUploadInitResponse,
+    UpdateMetadataResponse,
+    BatchStoreResponse,
+    # Type Aliases
+    ArtifactID,
+    SessionID,
+    SandboxID,
+    UserID,
 )
 
 # Exception classes
@@ -54,12 +88,44 @@ __all__ = [
     "ArtifactStore",
     # Models
     "ArtifactEnvelope",
+    "ArtifactMetadata",
     "AccessContext",
+    "GridKeyComponents",
     "StreamUploadRequest",
     "StreamDownloadRequest",
     "MultipartUploadInitRequest",
     "MultipartUploadCompleteRequest",
     "MultipartUploadPart",
+    # Type definitions and enums
+    "StorageScope",
+    "StorageProvider",
+    "SessionProvider",
+    "OperationStatus",
+    # Constants
+    "DEFAULT_TTL",
+    "DEFAULT_PRESIGN_EXPIRES",
+    "DEFAULT_SESSION_TTL_HOURS",
+    "DEFAULT_BUCKET",
+    "DEFAULT_SANDBOX_PREFIX",
+    "_DEFAULT_TTL",  # Legacy support
+    "_DEFAULT_PRESIGN_EXPIRES",  # Legacy support
+    # Response Models
+    "ProviderStatus",
+    "ValidationResponse",
+    "SessionStats",
+    "StorageStats",
+    "StatsResponse",
+    "SessionInfo",
+    "SandboxInfo",
+    "PresignedUploadResponse",
+    "MultipartUploadInitResponse",
+    "UpdateMetadataResponse",
+    "BatchStoreResponse",
+    # Type Aliases
+    "ArtifactID",
+    "SessionID",
+    "SandboxID",
+    "UserID",
     # Exceptions
     "ArtifactStoreError",
     "ArtifactNotFoundError",
@@ -74,9 +140,6 @@ __all__ = [
     "MetadataOperations",
     "BatchOperations",
     "AdminOperations",
-    # Constants
-    "_DEFAULT_TTL",
-    "_DEFAULT_PRESIGN_EXPIRES",
 ]
 
 

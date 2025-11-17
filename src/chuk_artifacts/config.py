@@ -10,6 +10,7 @@ without needing to write .env files or remember all the variable names.
 import os
 from typing import Dict, Optional
 from .store import ArtifactStore
+from .types import StorageProvider, SessionProvider
 
 
 def configure_memory() -> Dict[str, str]:
@@ -22,8 +23,8 @@ def configure_memory() -> Dict[str, str]:
         Environment variables that were set
     """
     env_vars = {
-        "ARTIFACT_PROVIDER": "memory",
-        "SESSION_PROVIDER": "memory",
+        "ARTIFACT_PROVIDER": StorageProvider.MEMORY.value,
+        "SESSION_PROVIDER": SessionProvider.MEMORY.value,
         "ARTIFACT_BUCKET": "mcp-artifacts",
     }
 
@@ -48,8 +49,8 @@ def configure_filesystem(root: str = "./artifacts") -> Dict[str, str]:
         Environment variables that were set
     """
     env_vars = {
-        "ARTIFACT_PROVIDER": "filesystem",
-        "SESSION_PROVIDER": "memory",
+        "ARTIFACT_PROVIDER": StorageProvider.FILESYSTEM.value,
+        "SESSION_PROVIDER": SessionProvider.MEMORY.value,
         "ARTIFACT_FS_ROOT": root,
         "ARTIFACT_BUCKET": "mcp-artifacts",
     }
@@ -92,9 +93,18 @@ def configure_s3(
     dict
         Environment variables that were set
     """
+    # Normalize session_provider to enum value if needed
+    session_provider_value = (
+        session_provider
+        if isinstance(session_provider, str)
+        else session_provider.value
+        if isinstance(session_provider, SessionProvider)
+        else SessionProvider.MEMORY.value
+    )
+
     env_vars = {
-        "ARTIFACT_PROVIDER": "s3",
-        "SESSION_PROVIDER": session_provider,
+        "ARTIFACT_PROVIDER": StorageProvider.S3.value,
+        "SESSION_PROVIDER": session_provider_value,
         "AWS_ACCESS_KEY_ID": access_key,
         "AWS_SECRET_ACCESS_KEY": secret_key,
         "AWS_REGION": region,
@@ -126,7 +136,10 @@ def configure_redis_session(
     dict
         Environment variables that were set
     """
-    env_vars = {"SESSION_PROVIDER": "redis", "SESSION_REDIS_URL": redis_url}
+    env_vars = {
+        "SESSION_PROVIDER": SessionProvider.REDIS.value,
+        "SESSION_REDIS_URL": redis_url,
+    }
 
     for key, value in env_vars.items():
         os.environ[key] = value
@@ -166,9 +179,18 @@ def configure_ibm_cos(
     dict
         Environment variables that were set
     """
+    # Normalize session_provider to enum value if needed
+    session_provider_value = (
+        session_provider
+        if isinstance(session_provider, str)
+        else session_provider.value
+        if isinstance(session_provider, SessionProvider)
+        else SessionProvider.MEMORY.value
+    )
+
     env_vars = {
-        "ARTIFACT_PROVIDER": "ibm_cos",
-        "SESSION_PROVIDER": session_provider,
+        "ARTIFACT_PROVIDER": StorageProvider.IBM_COS.value,
+        "SESSION_PROVIDER": session_provider_value,
         "AWS_ACCESS_KEY_ID": access_key,
         "AWS_SECRET_ACCESS_KEY": secret_key,
         "AWS_REGION": region,

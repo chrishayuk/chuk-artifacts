@@ -393,7 +393,7 @@ async def test_configuration_and_stats():
             # Validate configuration
             config_status = await store.validate_configuration()
 
-            assert isinstance(config_status, dict)
+            # Now returns Pydantic ValidationResponse, but supports dict-like access
             print(
                 f"  ✅ Configuration validation: {config_status.get('timestamp', 'OK')}"
             )
@@ -401,7 +401,7 @@ async def test_configuration_and_stats():
             # Get statistics
             stats = await store.get_stats()
 
-            assert isinstance(stats, dict)
+            # Now returns Pydantic StatsResponse, but supports dict-like access
             assert stats["storage_provider"] == "filesystem"
             assert stats["session_provider"] == "memory"
             print(
@@ -411,7 +411,7 @@ async def test_configuration_and_stats():
             # Test sandbox info
             try:
                 sandbox_info = await store.get_sandbox_info()
-                assert isinstance(sandbox_info, dict)
+                # Now returns Pydantic SandboxInfo, but supports dict-like access
                 assert "sandbox_id" in sandbox_info
                 print(f"  ✅ Sandbox info: {sandbox_info['sandbox_id']}")
             except AttributeError:

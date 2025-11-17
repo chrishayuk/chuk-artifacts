@@ -195,9 +195,9 @@ async def demo_vfs_features():
         # Get storage stats
         stats = await store.get_stats()
         print("✓ Storage stats:")
-        print(f"  - Provider: {stats.get('provider', 'N/A')}")
+        print(f"  - Provider: {stats.storage_provider}")
         print(
-            f"  - Operations: {stats.get('session_manager', {}).get('cache_hits', 0)} cache hits"
+            f"  - Operations: {stats.session_manager.cache_hits if stats.session_manager else 0} cache hits"
         )
 
 

@@ -916,11 +916,15 @@ class TestRealIntegrationScenarios:
 
             # 7. Get statistics
             stats = await store.get_stats()
-            assert isinstance(stats, dict)
+            # Now returns StatsResponse (Pydantic model) but supports dict-like access
+            assert hasattr(stats, "storage_provider") or "storage_provider" in stats
 
             # 8. Validate configuration
             config_validation = await store.validate_configuration()
-            assert isinstance(config_validation, dict)
+            # Now returns ValidationResponse (Pydantic model) but supports dict-like access
+            assert (
+                hasattr(config_validation, "overall") or "overall" in config_validation
+            )
 
     @pytest.mark.asyncio
     async def test_multi_session_workflow(self):

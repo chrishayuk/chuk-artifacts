@@ -37,6 +37,17 @@ from .models import (
     MultipartUploadInitRequest,
     MultipartUploadCompleteRequest,
 )
+from .types import (
+    StorageScope,
+    DEFAULT_TTL,
+    DEFAULT_PRESIGN_EXPIRES,
+    SessionInfo,
+    SandboxInfo,
+    ValidationResponse,
+    StatsResponse,
+    SessionStats,
+    StorageStats,
+)
 
 # Check for required dependencies
 if not find_spec("aioboto3"):
@@ -63,8 +74,11 @@ from .exceptions import ArtifactStoreError, ProviderError
 # Configure structured logging
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TTL = 900  # seconds (15 minutes for metadata)
-_DEFAULT_PRESIGN_EXPIRES = 3600  # seconds (1 hour for presigned URLs)
+# Legacy constants for backward compatibility
+_DEFAULT_TTL = DEFAULT_TTL  # seconds (15 minutes for metadata)
+_DEFAULT_PRESIGN_EXPIRES = (
+    DEFAULT_PRESIGN_EXPIRES  # seconds (1 hour for presigned URLs)
+)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -166,8 +180,9 @@ class ArtifactStore:
         filename: str | None = None,
         session_id: str | None = None,
         user_id: str | None = None,
-        ttl: int = _DEFAULT_TTL,
-        scope: str = "session",  # "session", "user", or "sandbox"
+        ttl: int = DEFAULT_TTL,
+        scope: StorageScope
+        | str = StorageScope.SESSION,  # Support both enum and string for backward compat
     ) -> str:
         """
         Store artifact with scope-based storage support.
@@ -202,8 +217,12 @@ class ArtifactStore:
             ...     scope="sandbox"
             ... )
         """
+        # Normalize scope to enum if string passed (backward compatibility)
+        if isinstance(scope, str):
+            scope = StorageScope(scope)
+
         # For user-scoped artifacts, user_id is required
-        if scope == "user" and not user_id:
+        if scope == StorageScope.USER and not user_id:
             raise ValueError("user_id is required for user-scoped artifacts")
 
         # Always allocate/validate session using chuk_sessions
@@ -223,7 +242,7 @@ class ArtifactStore:
             session_id=session_id,
             ttl=ttl,
             scope=scope,
-            owner_id=user_id if scope == "user" else None,
+            owner_id=user_id if scope == StorageScope.USER else None,
         )
 
     async def update_file(
@@ -312,14 +331,20 @@ class ArtifactStore:
         # 3. Session-scoped artifacts when session_id is explicitly provided (opt-in)
         # Handle both ArtifactMetadata objects and dict-style metadata (backward compat)
         metadata_scope = (
-            getattr(metadata, "scope", None) or metadata.get("scope", "session")
+            getattr(metadata, "scope", None)
+            or metadata.get("scope", StorageScope.SESSION)
             if isinstance(metadata, dict)
             else metadata.scope
         )
 
-        should_check_access = metadata_scope in ("user", "sandbox") or (
-            metadata_scope == "session" and session_id is not None
-        )
+        # Normalize scope to enum for comparison
+        if isinstance(metadata_scope, str):
+            metadata_scope = StorageScope(metadata_scope)
+
+        should_check_access = metadata_scope in (
+            StorageScope.USER,
+            StorageScope.SANDBOX,
+        ) or (metadata_scope == StorageScope.SESSION and session_id is not None)
 
         if should_check_access:
             from .access_control import check_access, build_context
@@ -377,8 +402,15 @@ class ArtifactStore:
             ... )
             >>> artifact_id = await store.stream_upload(request)
         """
+        # Normalize scope (backward compatibility)
+        scope = (
+            request.scope
+            if isinstance(request.scope, StorageScope)
+            else StorageScope(request.scope)
+        )
+
         # For user-scoped artifacts, user_id is required
-        if request.scope == "user" and not request.user_id:
+        if scope == StorageScope.USER and not request.user_id:
             raise ValueError("user_id is required for user-scoped artifacts")
 
         # Allocate/validate session
@@ -396,8 +428,8 @@ class ArtifactStore:
             filename=request.filename,
             session_id=session_id,
             ttl=request.ttl,
-            scope=request.scope,
-            owner_id=request.user_id if request.scope == "user" else None,
+            scope=scope,
+            owner_id=request.user_id if scope == StorageScope.USER else None,
             content_length=request.content_length,
             progress_callback=request.progress_callback,
         )
@@ -455,14 +487,20 @@ class ArtifactStore:
 
         # Enforce access control (same logic as retrieve)
         metadata_scope = (
-            getattr(metadata, "scope", None) or metadata.get("scope", "session")
+            getattr(metadata, "scope", None)
+            or metadata.get("scope", StorageScope.SESSION)
             if isinstance(metadata, dict)
             else metadata.scope
         )
 
-        should_check_access = metadata_scope in ("user", "sandbox") or (
-            metadata_scope == "session" and request.session_id is not None
-        )
+        # Normalize scope to enum for comparison
+        if isinstance(metadata_scope, str):
+            metadata_scope = StorageScope(metadata_scope)
+
+        should_check_access = metadata_scope in (
+            StorageScope.USER,
+            StorageScope.SANDBOX,
+        ) or (metadata_scope == StorageScope.SESSION and request.session_id is not None)
 
         if should_check_access:
             from .access_control import check_access, build_context
@@ -528,14 +566,20 @@ class ArtifactStore:
         # 3. Session-scoped artifacts when session_id is explicitly provided (opt-in)
         # Handle both ArtifactMetadata objects and dict-style metadata (backward compat)
         metadata_scope = (
-            getattr(metadata, "scope", None) or metadata.get("scope", "session")
+            getattr(metadata, "scope", None)
+            or metadata.get("scope", StorageScope.SESSION)
             if isinstance(metadata, dict)
             else metadata.scope
         )
 
-        should_check_access = metadata_scope in ("user", "sandbox") or (
-            metadata_scope == "session" and session_id is not None
-        )
+        # Normalize scope to enum for comparison
+        if isinstance(metadata_scope, str):
+            metadata_scope = StorageScope(metadata_scope)
+
+        should_check_access = metadata_scope in (
+            StorageScope.USER,
+            StorageScope.SANDBOX,
+        ) or (metadata_scope == StorageScope.SESSION and session_id is not None)
 
         if should_check_access:
             from .access_control import can_modify, build_context
@@ -560,7 +604,7 @@ class ArtifactStore:
                 )
                 raise AccessDeniedError(
                     f"Cannot delete artifact {artifact_id}: insufficient permissions. "
-                    f"Scope: {metadata_scope}, Owner: {owner_id or session_id_from_meta}"
+                    f"Scope: {metadata_scope.value if isinstance(metadata_scope, StorageScope) else metadata_scope}, Owner: {owner_id or session_id_from_meta}"
                 )
 
         # Permission granted (or no check needed), delete
@@ -621,16 +665,25 @@ class ArtifactStore:
         results = []
 
         try:
+            # Normalize scope to enum if provided as string
+            scope_enum = (
+                StorageScope(scope)
+                if isinstance(scope, str)
+                else scope
+                if scope
+                else None
+            )
+
             # Build prefix based on scope and user
-            if scope == "user" and user_id:
+            if scope_enum == StorageScope.USER and user_id:
                 prefix = f"grid/{self.sandbox_id}/users/{user_id}/"
-            elif scope == "session":
+            elif scope_enum == StorageScope.SESSION:
                 # Can't search all sessions efficiently without index
                 logger.warning(
                     "Searching session scope requires session_id, use list_by_session() instead"
                 )
                 return []
-            elif scope == "sandbox":
+            elif scope_enum == StorageScope.SANDBOX:
                 prefix = f"grid/{self.sandbox_id}/shared/"
             elif user_id:
                 # Search user artifacts specifically
@@ -718,9 +771,21 @@ class ArtifactStore:
         """Validate session."""
         return await self._session_manager.validate_session(session_id)
 
-    async def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def get_session_info(self, session_id: str) -> Optional[SessionInfo]:
         """Get session information."""
-        return await self._session_manager.get_session_info(session_id)
+        info_dict = await self._session_manager.get_session_info(session_id)
+        if info_dict is None:
+            return None
+        # Convert dict to SessionInfo model
+        return SessionInfo(
+            session_id=info_dict.get("session_id", session_id),
+            sandbox_id=info_dict.get("sandbox_id", self.sandbox_id),
+            user_id=info_dict.get("user_id"),
+            created_at=info_dict.get("created_at"),
+            expires_at=info_dict.get("expires_at"),
+            ttl_hours=info_dict.get("ttl_hours"),
+            metadata=info_dict.get("metadata", {}),
+        )
 
     async def update_session_metadata(
         self, session_id: str, metadata: Dict[str, Any]
@@ -781,6 +846,10 @@ class ArtifactStore:
         ttl: int = _DEFAULT_TTL,
     ) -> str:
         """Write content to file."""
+        # Normalize scope
+        if isinstance(scope, str):
+            scope = StorageScope(scope)
+
         if isinstance(content, str):
             data = content.encode(encoding)
         else:
@@ -1160,19 +1229,40 @@ class ArtifactStore:
     # Administrative operations
     # ─────────────────────────────────────────────────────────────────
 
-    async def validate_configuration(self) -> Dict[str, Any]:
+    async def validate_configuration(self) -> ValidationResponse:
         """Validate store configuration and connectivity."""
         return await self._admin.validate_configuration()
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> StatsResponse:
         """Get storage statistics."""
-        stats = await self._admin.get_stats()
+        stats_dict = await self._admin.get_stats()
 
         # Add session manager stats
-        session_stats = self._session_manager.get_cache_stats()
-        stats["session_manager"] = session_stats
+        session_stats_dict = self._session_manager.get_cache_stats()
 
-        return stats
+        # Convert to proper models
+        return StatsResponse(
+            storage_provider=stats_dict.get(
+                "storage_provider", self._storage_provider_name
+            ),
+            session_provider=stats_dict.get(
+                "session_provider", self._session_provider_name
+            ),
+            bucket=stats_dict.get("bucket", self.bucket),
+            sandbox_id=stats_dict.get("sandbox_id", self.sandbox_id),
+            session_manager=SessionStats(**session_stats_dict)
+            if session_stats_dict
+            else SessionStats(),
+            storage_stats=StorageStats(
+                provider=stats_dict.get("storage_provider"),
+                bucket=stats_dict.get("bucket"),
+                total_artifacts=stats_dict.get("total_artifacts"),
+                total_bytes=stats_dict.get("total_bytes"),
+            ),
+            # Backward compatibility fields at top level
+            total_artifacts=stats_dict.get("total_artifacts"),
+            total_bytes=stats_dict.get("total_bytes"),
+        )
 
     # ─────────────────────────────────────────────────────────────────
     # Helpers
@@ -1262,14 +1352,14 @@ class ArtifactStore:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def get_sandbox_info(self) -> Dict[str, Any]:
+    async def get_sandbox_info(self) -> SandboxInfo:
         """
         Get sandbox information and metadata.
 
         Returns
         -------
-        Dict[str, Any]
-            Dictionary containing sandbox information including:
+        SandboxInfo
+            Pydantic model containing sandbox information including:
             - sandbox_id: The current sandbox identifier
             - bucket: The storage bucket name
             - storage_provider: The storage provider type
@@ -1281,29 +1371,36 @@ class ArtifactStore:
         from datetime import datetime
 
         # Get session manager stats if available
-        session_stats = {}
+        session_stats_dict = {}
         try:
-            session_stats = self._session_manager.get_cache_stats()
+            session_stats_dict = self._session_manager.get_cache_stats()
         except Exception:
             pass  # Session manager might not have stats
 
         # Get storage stats if available
-        storage_stats = {}
+        storage_stats_dict = {}
         try:
-            storage_stats = await self._admin.get_stats()
+            storage_stats_dict = await self._admin.get_stats()
         except Exception:
             pass  # Storage might not have stats
 
-        return {
-            "sandbox_id": self.sandbox_id,
-            "bucket": self.bucket,
-            "storage_provider": self._storage_provider_name,
-            "session_provider": self._session_provider_name,
-            "session_ttl_hours": self.session_ttl_hours,
-            "max_retries": self.max_retries,
-            "grid_prefix_pattern": self.get_session_prefix_pattern(),
-            "created_at": datetime.utcnow().isoformat() + "Z",
-            "session_stats": session_stats,
-            "storage_stats": storage_stats,
-            "closed": self._closed,
-        }
+        return SandboxInfo(
+            sandbox_id=self.sandbox_id,
+            bucket=self.bucket,
+            storage_provider=self._storage_provider_name,
+            session_provider=self._session_provider_name,
+            session_ttl_hours=self.session_ttl_hours,
+            max_retries=self.max_retries,
+            grid_prefix_pattern=self.get_session_prefix_pattern(),
+            created_at=datetime.utcnow().isoformat() + "Z",
+            session_stats=SessionStats(**session_stats_dict)
+            if session_stats_dict
+            else SessionStats(),
+            storage_stats=StorageStats(
+                provider=storage_stats_dict.get("storage_provider"),
+                bucket=storage_stats_dict.get("bucket"),
+                total_artifacts=storage_stats_dict.get("total_artifacts"),
+                total_bytes=storage_stats_dict.get("total_bytes"),
+            ),
+            closed=self._closed,
+        )

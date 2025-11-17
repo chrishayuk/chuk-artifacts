@@ -4,10 +4,11 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/chuk-artifacts)](https://pypi.org/project/chuk-artifacts/)
 [![Python](https://img.shields.io/pypi/pyversions/chuk-artifacts.svg)](https://pypi.org/project/chuk-artifacts/)
-[![Tests](https://img.shields.io/badge/tests-746%20passing-success.svg)](#testing)
-[![Coverage](https://img.shields.io/badge/coverage-93%25-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-778%20passing-success.svg)](#testing)
+[![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen.svg)](#testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Async](https://img.shields.io/badge/async-await-green.svg)](https://docs.python.org/3/library/asyncio.html)
+[![Type Safety](https://img.shields.io/badge/pydantic-native-blue.svg)](#type-safety--pydantic)
 
 CHUK Artifacts provides a unified, async API for storing and retrieving files ("artifacts") across local development and production cloud environments. Store ephemeral session files, persistent user documents, and shared resources—all with automatic access control, grid-based organization, and presigned upload/download URLs for secure client-side storage interaction.
 
@@ -45,6 +46,7 @@ async with ArtifactStore() as store:
 - [Quick Start](#quick-start)
 - [Providers & Sessions](#providers--sessions)
 - [Core Concepts](#core-concepts)
+- [Type Safety & Pydantic](#type-safety--pydantic)
 - [Storage Scopes](#storage-scopes)
 - [Common Recipes](#common-recipes)
 - [Streaming Operations](#streaming-operations)
@@ -452,6 +454,155 @@ try:
     await store.copy_file(alice_file, target_session_id=bob_meta.session_id)
 except ArtifactStoreError:
     print("🔒 Cross-session access denied!")  # Security enforced
+```
+
+---
+
+## Type Safety & Pydantic
+
+**New in v1.1**: Full Pydantic native API with type-safe enums and models.
+
+CHUK Artifacts provides complete type safety through Pydantic models and enums, giving you IDE autocomplete, type checking, and runtime validation.
+
+### Pydantic Response Models
+
+All API responses return Pydantic models (not dictionaries):
+
+```python
+from chuk_artifacts import ArtifactStore
+
+async with ArtifactStore() as store:
+    # Returns ArtifactMetadata (Pydantic model)
+    metadata = await store.metadata(artifact_id)
+
+    # Access via attributes (recommended)
+    print(metadata.artifact_id)  # Type-safe!
+    print(metadata.mime)
+    print(metadata.bytes)
+    print(metadata.scope)  # Returns StorageScope enum
+
+    # Dict-style access also works (backward compatibility)
+    print(metadata["artifact_id"])  # Still works
+    print(metadata.get("mime"))     # Still works
+```
+
+### Type-Safe Enums
+
+Use enums instead of magic strings:
+
+```python
+from chuk_artifacts import ArtifactStore
+from chuk_artifacts.types import StorageScope, StorageProvider, SessionProvider
+
+# ✅ Type-safe with enums (recommended)
+artifact_id = await store.store(
+    data=b"User document",
+    mime="text/plain",
+    summary="Important doc",
+    user_id="alice",
+    scope=StorageScope.USER  # Enum, not string!
+)
+
+# ✅ String values still work (backward compatible)
+artifact_id = await store.store(
+    data=b"User document",
+    mime="text/plain",
+    summary="Important doc",
+    user_id="alice",
+    scope="user"  # Strings auto-converted to enums
+)
+
+# Available enums:
+# - StorageScope: SESSION, USER, SANDBOX
+# - StorageProvider: MEMORY, FILESYSTEM, S3, IBM_COS, VFS, VFS_MEMORY, VFS_FILESYSTEM, VFS_S3, VFS_SQLITE
+# - SessionProvider: MEMORY, REDIS
+# - OperationStatus: SUCCESS, FAILED, HEALTHY, UNHEALTHY, OK, ERROR
+```
+
+### Response Model Types
+
+Common response models:
+
+```python
+# Get stats - returns StatsResponse
+stats = await store.get_stats()
+print(stats.storage_provider)  # Attribute access
+print(stats.total_artifacts)
+print(stats.total_bytes)
+
+# Validate config - returns ValidationResponse
+status = await store.validate_configuration()
+print(status.overall)  # OperationStatus enum
+print(status.storage.status)  # Nested ProviderStatus
+
+# Get sandbox info - returns SandboxInfo
+info = await store.get_sandbox_info()
+print(info.sandbox_id)
+print(info.storage_provider)
+print(info.created_at)
+
+# Search artifacts - returns list[ArtifactMetadata]
+artifacts = await store.search(user_id="alice", scope=StorageScope.USER)
+for artifact in artifacts:
+    print(f"{artifact.filename}: {artifact.bytes} bytes")
+```
+
+### Benefits of Pydantic Models
+
+- ✅ **IDE Autocomplete** - Your editor knows all available fields
+- ✅ **Type Checking** - mypy/pyright catch errors before runtime
+- ✅ **Runtime Validation** - Pydantic validates data automatically
+- ✅ **Backward Compatible** - Dict-style access still works (`obj["key"]`, `.get()`)
+- ✅ **Clear Documentation** - Models are self-documenting with field types
+- ✅ **No Magic Strings** - Enums prevent typos and invalid values
+
+### Importing Types
+
+```python
+# Import all types from the types module
+from chuk_artifacts.types import (
+    # Enums
+    StorageScope,
+    StorageProvider,
+    SessionProvider,
+    OperationStatus,
+    # Constants
+    DEFAULT_TTL,
+    DEFAULT_PRESIGN_EXPIRES,
+    DEFAULT_SESSION_TTL_HOURS,
+    # Response Models
+    ValidationResponse,
+    StatsResponse,
+    SessionInfo,
+    SandboxInfo,
+    PresignedUploadResponse,
+    MultipartUploadInitResponse,
+)
+
+# Or import from models
+from chuk_artifacts.models import (
+    ArtifactMetadata,
+    ArtifactEnvelope,
+    GridKeyComponents,
+    MultipartUploadPart,
+    MultipartUploadCompleteRequest,
+)
+```
+
+### Migration from Dict-Based Code
+
+Existing code continues to work! Both styles are supported:
+
+```python
+# Old style (still works)
+metadata = await store.metadata(artifact_id)
+size = metadata.get("bytes", 0)  # Dict-style
+mime = metadata["mime"]           # Dict-style
+
+# New style (recommended)
+metadata = await store.metadata(artifact_id)
+size = metadata.bytes  # Attribute access with type checking!
+mime = metadata.mime   # IDE autocomplete works!
 ```
 
 ---
@@ -1477,15 +1628,23 @@ deleted = await store.delete(file_id)
 ### Monitoring
 
 ```python
-# Validate configuration
+# Validate configuration (returns ValidationResponse)
 status = await store.validate_configuration()
+# Dict-style access (backward compatible)
 print(f"Storage: {status['storage']['status']}")
 print(f"Sessions: {status['session']['status']}")
+# Recommended: Pydantic attribute access
+print(f"Overall: {status.overall}")
+print(f"Storage: {status.storage.status}")
 
-# Get statistics
+# Get statistics (returns StatsResponse)
 stats = await store.get_stats()
+# Dict-style access (backward compatible)
 print(f"Provider: {stats['storage_provider']}")
 print(f"Bucket: {stats['bucket']}")
+# Recommended: Pydantic attribute access
+print(f"Provider: {stats.storage_provider}")
+print(f"Total: {stats.total_artifacts} artifacts, {stats.total_bytes} bytes")
 
 # Cleanup expired sessions
 cleaned = await store.cleanup_expired_sessions()
@@ -2018,6 +2177,14 @@ expired = await store.cleanup_expired_sessions()
 - ✅ **Async generators** - Native Python async/await streaming
 - ✅ **Access control** - Streaming and multipart respect all scope rules
 - 746 tests passing (93% coverage)
+
+✅ **Phase 2.5 Complete (v1.1)**:
+- ✅ **Pydantic-native API** - All responses are Pydantic models with type safety
+- ✅ **Type-safe enums** - StorageScope, StorageProvider, SessionProvider, OperationStatus
+- ✅ **Backward compatibility** - Dict-like access still works alongside attribute access
+- ✅ **IDE autocomplete** - Full type hints for all models and enums
+- ✅ **Runtime validation** - Pydantic validates all inputs/outputs automatically
+- 778 tests passing (92% coverage)
 
 **Phase 3 (Planned)**:
 - [ ] **Virtual mounts** - Mix providers per scope (VFS feature)

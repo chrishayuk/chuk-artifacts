@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 # chuk_artifacts/models.py
-from typing import Any, Dict, Optional, Literal, AsyncIterator, Callable
+from typing import Any, Dict, Optional, AsyncIterator, Callable
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+from .types import StorageScope
 
 
 class ArtifactEnvelope(BaseModel):
@@ -55,8 +56,8 @@ class ArtifactMetadata(BaseModel):
     session_provider: str  # e.g., "redis", "memory"
 
     # Scope-based storage (Phase 1 expansion)
-    scope: Literal["session", "user", "sandbox"] = Field(
-        default="session",
+    scope: StorageScope = Field(
+        default=StorageScope.SESSION,
         description="Storage scope: session (ephemeral), user (persistent), or sandbox (shared)",
     )
     owner_id: Optional[str] = Field(
@@ -223,8 +224,8 @@ class StreamUploadRequest(BaseModel):
         None, description="User ID (used for session allocation and user scope)"
     )
     ttl: int = Field(default=900, gt=0, description="Time-to-live in seconds")
-    scope: Literal["session", "user", "sandbox"] = Field(
-        default="session",
+    scope: StorageScope = Field(
+        default=StorageScope.SESSION,
         description="Storage scope: session (ephemeral), user (persistent), or sandbox (shared)",
     )
     content_length: Optional[int] = Field(
@@ -287,8 +288,8 @@ class MultipartUploadInitRequest(BaseModel):
         default=None, description="User ID (for auto-generated session)"
     )
     session_id: Optional[str] = Field(default=None, description="Explicit session ID")
-    scope: Literal["session", "user", "sandbox"] = Field(
-        default="session",
+    scope: StorageScope = Field(
+        default=StorageScope.SESSION,
         description="Storage scope: session (ephemeral), user (persistent), or sandbox (shared)",
     )
     ttl: int = Field(default=900, gt=0, description="Time-to-live in seconds")
