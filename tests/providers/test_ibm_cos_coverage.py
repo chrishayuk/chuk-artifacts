@@ -237,6 +237,6 @@ class TestIBMCOSRegionDetection:
                     client(endpoint_url=endpoint)
 
                     call_kwargs = mock_session.client.call_args.kwargs
-                    assert (
-                        call_kwargs["region_name"] == expected_region
-                    ), f"Failed for endpoint: {endpoint}, expected: {expected_region}, got: {call_kwargs['region_name']}"
+                    assert call_kwargs["region_name"] == expected_region, (
+                        f"Failed for endpoint: {endpoint}, expected: {expected_region}, got: {call_kwargs['region_name']}"
+                    )

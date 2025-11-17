@@ -138,9 +138,9 @@ async def test_basic_artifact_operations():
                     rel_path = match.relative_to(temp_dir)
                     print(f"        📄 {rel_path}")
 
-            assert (
-                len(found_files) > 0
-            ), f"Artifact file should exist in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
+            assert len(found_files) > 0, (
+                f"Artifact file should exist in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
+            )
             print(f"  📁 Artifact file found: {found_files[0]}")
 
             # Retrieve the artifact
@@ -175,9 +175,9 @@ async def test_basic_artifact_operations():
 
             # Verify it's gone from filesystem
             remaining_files = list(bucket_dir.rglob(artifact_id))
-            assert (
-                len(remaining_files) == 0
-            ), "Artifact file should be deleted from filesystem"
+            assert len(remaining_files) == 0, (
+                "Artifact file should be deleted from filesystem"
+            )
             print("  📁 Artifact file properly deleted from filesystem")
 
             # Verify it's gone from store
@@ -239,12 +239,12 @@ async def test_session_isolation_with_artifactstore():
             alice_files = list(bucket_dir.rglob(f"*{session1}*"))
             bob_files = list(bucket_dir.rglob(f"*{session2}*"))
 
-            assert (
-                len(alice_files) >= 1
-            ), f"Alice should have files in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
-            assert (
-                len(bob_files) >= 1
-            ), f"Bob should have files in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
+            assert len(alice_files) >= 1, (
+                f"Alice should have files in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
+            )
+            assert len(bob_files) >= 1, (
+                f"Bob should have files in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
+            )
             print(f"  📁 Alice files: {len(alice_files)}, Bob files: {len(bob_files)}")
 
             # Verify each session can access its own data
@@ -319,9 +319,9 @@ async def test_file_operations_with_filesystem():
             # Verify file exists on filesystem using correct bucket name
             bucket_dir = temp_dir / store.bucket
             doc_files = list(bucket_dir.rglob(doc_id))
-            assert (
-                len(doc_files) > 0
-            ), f"Document file should exist in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
+            assert len(doc_files) > 0, (
+                f"Document file should exist in filesystem. Bucket: {store.bucket}, Searched in: {bucket_dir}"
+            )
             print(f"  📁 Document file: {doc_files[0]}")
 
             # Read the file
@@ -342,9 +342,9 @@ async def test_file_operations_with_filesystem():
 
                 # Verify copy exists on filesystem using correct bucket name
                 copy_files = list(bucket_dir.rglob(copy_id))
-                assert (
-                    len(copy_files) > 0
-                ), f"Copy file should exist in filesystem. Bucket: {store.bucket}"
+                assert len(copy_files) > 0, (
+                    f"Copy file should exist in filesystem. Bucket: {store.bucket}"
+                )
                 print(f"  📁 Copy file: {copy_files[0]}")
 
             except Exception as e:
@@ -540,7 +540,7 @@ async def test_concurrent_access():
 
             if failed_results:
                 for i, error in enumerate(failed_results):
-                    print(f"    Error {i+1}: {type(error).__name__}: {error}")
+                    print(f"    Error {i + 1}: {type(error).__name__}: {error}")
 
             # Verify filesystem contains expected data
             bucket_dir = temp_dir / "chuk-sandbox-2"  # FIX: Use correct bucket name

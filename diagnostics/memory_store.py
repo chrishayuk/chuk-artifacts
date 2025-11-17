@@ -364,7 +364,7 @@ async def test_concurrent_access():
 
     if failed_results:
         for i, error in enumerate(failed_results):
-            print(f"    Error {i+1}: {type(error).__name__}: {error}")
+            print(f"    Error {i + 1}: {type(error).__name__}: {error}")
 
     # Verify shared storage contains expected data
     print(f"  📊 Shared storage contains {len(shared_store)} objects")

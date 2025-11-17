@@ -518,7 +518,7 @@ async def save_provider_file(provider_code):
         # Backup existing file
         if provider_file.exists():
             backup_file = provider_file.with_suffix(
-                f'.py.backup.{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                f".py.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
             provider_file.rename(backup_file)
             print(f"💾 Backed up existing provider to: {backup_file}")

@@ -63,6 +63,10 @@ filterwarnings = [
 dev = [
     "httpx>=0.28.1",
     "pytest-asyncio>=1.0.0",
+    "pytest>=8.3.5",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.4.6",
+    "mypy>=1.0.0",
 ]
 
 [tool.mypy]

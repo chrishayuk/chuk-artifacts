@@ -375,9 +375,9 @@ class TestFilesystemListingPagination:
                 result = await client.list_objects_v2(
                     Bucket="prefix-test", Prefix="dir1/"
                 )
-                assert (
-                    result["KeyCount"] >= 2
-                ), f"Expected at least 2 but got {result['KeyCount']}"
+                assert result["KeyCount"] >= 2, (
+                    f"Expected at least 2 but got {result['KeyCount']}"
+                )
                 keys = [obj["Key"] for obj in result["Contents"]]
                 assert "dir1/file.txt" in keys
                 assert "dir1/sub/file.txt" in keys

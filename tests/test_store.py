@@ -683,9 +683,11 @@ class TestFileOperations:
             meta={"key": "value"},
         )
 
-        with patch.object(store, "metadata") as mock_metadata, patch.object(
-            store, "retrieve"
-        ) as mock_retrieve, patch.object(store, "store") as mock_store:
+        with (
+            patch.object(store, "metadata") as mock_metadata,
+            patch.object(store, "retrieve") as mock_retrieve,
+            patch.object(store, "store") as mock_store,
+        ):
             mock_metadata.return_value = original_meta
             mock_retrieve.return_value = b"file content"
             mock_store.return_value = "artifact-copy"
@@ -1097,9 +1099,10 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_store_empty_data(self, store):
         """Test storing empty data."""
-        with patch.object(
-            store._session_manager, "allocate_session"
-        ) as mock_allocate, patch.object(store._core, "store") as mock_store:
+        with (
+            patch.object(store._session_manager, "allocate_session") as mock_allocate,
+            patch.object(store._core, "store") as mock_store,
+        ):
             mock_allocate.return_value = "session-123"
             mock_store.return_value = "artifact-123"
 
@@ -1116,9 +1119,10 @@ class TestEdgeCases:
         """Test storing artifact with large metadata."""
         large_meta = {f"key_{i}": f"value_{i}" * 100 for i in range(100)}
 
-        with patch.object(
-            store._session_manager, "allocate_session"
-        ) as mock_allocate, patch.object(store._core, "store") as mock_store:
+        with (
+            patch.object(store._session_manager, "allocate_session") as mock_allocate,
+            patch.object(store._core, "store") as mock_store,
+        ):
             mock_allocate.return_value = "session-123"
             mock_store.return_value = "artifact-123"
 
@@ -1172,9 +1176,11 @@ class TestEdgeCases:
             meta={},
         )
 
-        with patch.object(store, "metadata") as mock_metadata, patch.object(
-            store, "retrieve"
-        ) as mock_retrieve, patch.object(store, "store") as mock_store:
+        with (
+            patch.object(store, "metadata") as mock_metadata,
+            patch.object(store, "retrieve") as mock_retrieve,
+            patch.object(store, "store") as mock_store,
+        ):
             mock_metadata.return_value = original_meta
             mock_retrieve.return_value = b"binary data"
             mock_store.return_value = "artifact-copy"
@@ -1351,9 +1357,10 @@ class TestConcurrencyAndAsyncBehavior:
     @pytest.mark.asyncio
     async def test_concurrent_store_operations(self, store):
         """Test concurrent store operations."""
-        with patch.object(
-            store._session_manager, "allocate_session"
-        ) as mock_allocate, patch.object(store._core, "store") as mock_store:
+        with (
+            patch.object(store._session_manager, "allocate_session") as mock_allocate,
+            patch.object(store._core, "store") as mock_store,
+        ):
             # Setup mocks to return different values for concurrent calls
             mock_allocate.side_effect = ["session-1", "session-2", "session-3"]
             mock_store.side_effect = ["artifact-1", "artifact-2", "artifact-3"]
@@ -1377,11 +1384,10 @@ class TestConcurrencyAndAsyncBehavior:
     @pytest.mark.asyncio
     async def test_concurrent_session_operations(self, store):
         """Test concurrent session operations."""
-        with patch.object(
-            store._session_manager, "allocate_session"
-        ) as mock_allocate, patch.object(
-            store._session_manager, "validate_session"
-        ) as mock_validate:
+        with (
+            patch.object(store._session_manager, "allocate_session") as mock_allocate,
+            patch.object(store._session_manager, "validate_session") as mock_validate,
+        ):
             mock_allocate.side_effect = ["session-1", "session-2"]
             mock_validate.return_value = True
 
@@ -1407,9 +1413,10 @@ class TestParameterValidationAndTypes:
     @pytest.mark.asyncio
     async def test_store_with_none_values(self, store):
         """Test store operation with None values for optional parameters."""
-        with patch.object(
-            store._session_manager, "allocate_session"
-        ) as mock_allocate, patch.object(store._core, "store") as mock_store:
+        with (
+            patch.object(store._session_manager, "allocate_session") as mock_allocate,
+            patch.object(store._core, "store") as mock_store,
+        ):
             mock_allocate.return_value = "session-123"
             mock_store.return_value = "artifact-123"
 

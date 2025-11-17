@@ -479,9 +479,9 @@ async def test_s3_metadata_handling():
                 found = False
                 for actual_key, actual_value in returned_metadata.items():
                     if actual_key.lower() == key_name.lower():
-                        assert (
-                            actual_value == expected_value
-                        ), f"Metadata mismatch for {key_name}: {actual_value} != {expected_value}"
+                        assert actual_value == expected_value, (
+                            f"Metadata mismatch for {key_name}: {actual_value} != {expected_value}"
+                        )
                         found = True
                         break
                 assert found, f"Metadata key {key_name} not found in response"

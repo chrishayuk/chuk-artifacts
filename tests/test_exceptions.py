@@ -274,7 +274,7 @@ class TestExceptionEquality:
         exc1 = ArtifactNotFoundError("test")
         exc2 = ArtifactExpiredError("test")
 
-        assert type(exc1) != type(exc2)
+        assert type(exc1) is not type(exc2)
         assert isinstance(exc1, ArtifactNotFoundError)
         assert not isinstance(exc1, ArtifactExpiredError)
         assert isinstance(exc2, ArtifactExpiredError)

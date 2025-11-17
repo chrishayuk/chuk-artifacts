@@ -324,9 +324,9 @@ def factory(
 # ---- convenience functions for testing ------------------------------------
 
 
-def create_shared_memory_factory() -> (
-    tuple[Callable[[], AsyncContextManager], Dict[str, Dict[str, Any]]]
-):
+def create_shared_memory_factory() -> tuple[
+    Callable[[], AsyncContextManager], Dict[str, Dict[str, Any]]
+]:
     """
     Create a factory that uses shared storage, returning both the factory
     and a reference to the storage dict for inspection.

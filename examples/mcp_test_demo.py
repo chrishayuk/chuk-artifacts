@@ -295,7 +295,7 @@ Created via MCP session operations.
 
         print("🎯 MCP Session Summary:")
         print(f"   Total files: {len(final_files)}")
-        print(f"   Total size: {total_bytes:,} bytes ({total_bytes/1024:.1f} KB)")
+        print(f"   Total size: {total_bytes:,} bytes ({total_bytes / 1024:.1f} KB)")
         print(f"   Directories: {len(directories)}")
 
         for directory, info in sorted(directories.items()):
@@ -687,7 +687,7 @@ async def mcp_performance_demo():
 
         create_time = time.time() - start_time
         print(
-            f"✅ Created 20 files in {create_time:.3f}s ({20/create_time:.1f} files/sec)"
+            f"✅ Created 20 files in {create_time:.3f}s ({20 / create_time:.1f} files/sec)"
         )
 
         # =====================================================================
@@ -727,7 +727,7 @@ async def mcp_performance_demo():
 
         read_time = time.time() - start_time
         print(
-            f"✅ Read {read_count} files in {read_time:.3f}s ({read_count/read_time:.1f} reads/sec)"
+            f"✅ Read {read_count} files in {read_time:.3f}s ({read_count / read_time:.1f} reads/sec)"
         )
 
         # =====================================================================
@@ -747,7 +747,7 @@ async def mcp_performance_demo():
 
         copy_time = time.time() - start_time
         print(
-            f"✅ Copied {copy_count} files in {copy_time:.3f}s ({copy_count/copy_time:.1f} copies/sec)"
+            f"✅ Copied {copy_count} files in {copy_time:.3f}s ({copy_count / copy_time:.1f} copies/sec)"
         )
 
         # =====================================================================
@@ -759,10 +759,10 @@ async def mcp_performance_demo():
         total_bytes = sum(f.bytes for f in final_files)
 
         print(f"   Total files: {len(final_files)}")
-        print(f"   Total data: {total_bytes:,} bytes ({total_bytes/1024:.1f} KB)")
-        print(f"   Create rate: {20/create_time:.1f} files/sec")
-        print(f"   Read rate: {read_count/read_time:.1f} files/sec")
-        print(f"   Copy rate: {copy_count/copy_time:.1f} files/sec")
+        print(f"   Total data: {total_bytes:,} bytes ({total_bytes / 1024:.1f} KB)")
+        print(f"   Create rate: {20 / create_time:.1f} files/sec")
+        print(f"   Read rate: {read_count / read_time:.1f} files/sec")
+        print(f"   Copy rate: {copy_count / copy_time:.1f} files/sec")
         print(f"   List time: {list_time:.3f}s")
 
         print("\n🎯 Performance meets MCP server requirements!")
