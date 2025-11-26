@@ -32,6 +32,7 @@ from .types import (
     StorageProvider,
     SessionProvider,
     OperationStatus,
+    NamespaceType,  # NEW - unified VFS
     # Constants
     DEFAULT_TTL,
     DEFAULT_PRESIGN_EXPIRES,
@@ -55,6 +56,13 @@ from .types import (
     SessionID,
     SandboxID,
     UserID,
+    WorkspaceID,
+    NamespaceID,  # NEW - unified VFS
+    # Unified Namespace Models (Clean API)
+    NamespaceInfo,  # NEW - unified VFS
+    # Workspace Models (Legacy - kept for backward compat if needed)
+    WorkspaceInfo,
+    CheckpointInfo,
 )
 
 # Exception classes
@@ -74,6 +82,7 @@ from .presigned import PresignedURLOperations
 from .metadata import MetadataOperations
 from .batch import BatchOperations
 from .admin import AdminOperations
+from .namespace import NamespaceOperations  # NEW - unified VFS
 from .store import _DEFAULT_TTL, _DEFAULT_PRESIGN_EXPIRES
 
 
@@ -101,6 +110,7 @@ __all__ = [
     "StorageProvider",
     "SessionProvider",
     "OperationStatus",
+    "NamespaceType",  # NEW - unified VFS
     # Constants
     "DEFAULT_TTL",
     "DEFAULT_PRESIGN_EXPIRES",
@@ -126,6 +136,13 @@ __all__ = [
     "SessionID",
     "SandboxID",
     "UserID",
+    "WorkspaceID",
+    "NamespaceID",  # NEW - unified VFS
+    # Unified Namespace Models (Clean API)
+    "NamespaceInfo",  # NEW - unified VFS
+    # Workspace Models (Legacy - kept for backward compat if needed)
+    "WorkspaceInfo",
+    "CheckpointInfo",
     # Exceptions
     "ArtifactStoreError",
     "ArtifactNotFoundError",
@@ -140,6 +157,7 @@ __all__ = [
     "MetadataOperations",
     "BatchOperations",
     "AdminOperations",
+    "NamespaceOperations",  # NEW - unified VFS
 ]
 
 

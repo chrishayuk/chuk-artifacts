@@ -149,12 +149,14 @@ class ArtifactStore:
         from .presigned import PresignedURLOperations as PresignedOps
         from .batch import BatchOperations as BatchOps
         from .admin import AdminOperations as AdminOps
+        from .namespace import NamespaceOperations
 
         self._core = CoreOps(self)
         self._metadata = MetaOps(self)
         self._presigned = PresignedOps(self)
         self._batch = BatchOps(self)
         self._admin = AdminOps(self)
+        self._namespace = NamespaceOperations(self)
 
         logger.info(
             "ArtifactStore initialized",
@@ -1404,3 +1406,122 @@ class ArtifactStore:
             ),
             closed=self._closed,
         )
+
+    # ─────────────────────────────────────────────────────────────────
+    # Unified Namespace Operations (Clean API - everything is VFS)
+    # ─────────────────────────────────────────────────────────────────
+
+    @property
+    def namespace(self):
+        """Access namespace operations (clean API)."""
+        return self._namespace
+
+    # Clean API - Namespace operations
+    async def create_namespace(self, **kwargs):
+        """
+        Create a namespace (blob or workspace).
+
+        Args:
+        type: NamespaceType.BLOB or NamespaceType.WORKSPACE
+            name: Optional name (recommended for workspaces)
+            scope: StorageScope (SESSION, USER, SANDBOX)
+            provider_type: VFS provider (vfs-memory, vfs-filesystem, etc.)
+            **kwargs: Additional parameters
+
+        Returns:
+            NamespaceInfo
+
+        Examples:
+            >>> # Create blob namespace
+            >>> blob_ns = await store.create_namespace(
+            ...     type=NamespaceType.BLOB,
+            ...     scope=StorageScope.SESSION
+            ... )
+
+            >>> # Create workspace namespace
+            >>> workspace_ns = await store.create_namespace(
+            ...     type=NamespaceType.WORKSPACE,
+            ...     name="my-project",
+            ...     scope=StorageScope.USER,
+            ...     user_id="alice"
+            ... )
+        """
+        return await self._namespace.create_namespace(**kwargs)
+
+    async def write_namespace(self, namespace_id: str, **kwargs):
+        """
+        Write to namespace.
+
+        For blobs: path=None writes to /_data
+        For workspaces: path required
+
+        Args:
+            namespace_id: Namespace ID
+            data: Data bytes
+            path: File path (None for blobs, required for workspaces)
+            mime: MIME type (for blobs)
+        """
+        return await self._namespace.write_namespace(namespace_id, **kwargs)
+
+    async def read_namespace(self, namespace_id: str, **kwargs):
+        """
+        Read from namespace.
+
+        For blobs: path=None reads from /_data
+        For workspaces: path required
+
+        Args:
+            namespace_id: Namespace ID
+            path: File path (None for blobs, required for workspaces)
+
+        Returns:
+            File contents as bytes
+        """
+        return await self._namespace.read_namespace(namespace_id, **kwargs)
+
+    def get_namespace_vfs(self, namespace_id: str):
+        """
+        Get VFS instance for namespace (blob or workspace).
+
+        Args:
+            namespace_id: Namespace ID
+
+        Returns:
+            AsyncVirtualFileSystem instance
+        """
+        return self._namespace.get_namespace_vfs(namespace_id)
+
+    def get_namespace_info(self, namespace_id: str, session_id: str | None = None):
+        """Get namespace information."""
+        return self._namespace.get_namespace_info(namespace_id, session_id)
+
+    def list_namespaces(self, **kwargs):
+        """
+        List namespaces.
+
+        Args:
+            session_id: Filter by session
+            user_id: Filter by user
+            type: Filter by NamespaceType (BLOB or WORKSPACE)
+            include_all_scopes: Include sandbox namespaces
+
+        Returns:
+            List of NamespaceInfo
+        """
+        return self._namespace.list_namespaces(**kwargs)
+
+    async def destroy_namespace(self, namespace_id: str, session_id: str | None = None):
+        """Destroy namespace (blob or workspace)."""
+        return await self._namespace.destroy_namespace(namespace_id, session_id)
+
+    async def checkpoint_namespace(self, namespace_id: str, **kwargs):
+        """Create checkpoint of namespace (blob or workspace)."""
+        return await self._namespace.checkpoint_namespace(namespace_id, **kwargs)
+
+    async def restore_namespace(self, namespace_id: str, checkpoint_id: str):
+        """Restore namespace from checkpoint."""
+        return await self._namespace.restore_namespace(namespace_id, checkpoint_id)
+
+    async def list_checkpoints(self, namespace_id: str):
+        """List checkpoints for namespace."""
+        return await self._namespace.list_checkpoints(namespace_id)

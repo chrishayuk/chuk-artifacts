@@ -29,15 +29,15 @@ class StorageScope(str, Enum):
 
 class StorageProvider(str, Enum):
     """
-    Available storage providers for artifact storage.
+    Available storage providers for artifact and workspace storage.
 
-    Legacy providers:
+    Legacy providers (artifacts only):
     - MEMORY: In-memory storage (development/testing)
     - FILESYSTEM: Local filesystem storage
     - S3: AWS S3 or S3-compatible storage
     - IBM_COS: IBM Cloud Object Storage
 
-    VFS providers (recommended, powered by chuk-virtual-fs):
+    VFS providers (recommended for both artifacts and workspaces):
     - VFS_MEMORY: VFS-based memory storage
     - VFS_FILESYSTEM: VFS-based filesystem storage
     - VFS_S3: VFS-based S3 storage
@@ -65,6 +65,18 @@ class SessionProvider(str, Enum):
 
     MEMORY = "memory"
     REDIS = "redis"
+
+
+class NamespaceType(str, Enum):
+    """
+    Namespace type for unified VFS-backed storage.
+
+    - BLOB: Single-file namespace (artifact/blob storage)
+    - WORKSPACE: Multi-file namespace (workspace/file tree)
+    """
+
+    BLOB = "blob"
+    WORKSPACE = "workspace"
 
 
 class OperationStatus(str, Enum):
@@ -538,6 +550,125 @@ ArtifactID = str
 SessionID = str
 SandboxID = str
 UserID = str
+WorkspaceID = str
+
+
+# ============================================================================
+# Unified Namespace Models (Clean API)
+# ============================================================================
+
+
+NamespaceID = str
+
+
+class NamespaceInfo(BaseModel):
+    """
+    Unified namespace information (clean API).
+
+    A namespace is a VFS-backed storage unit that can be:
+    - BLOB: Single-file namespace (artifact/blob storage at /_data)
+    - WORKSPACE: Multi-file namespace (full directory tree)
+
+    Both types use the same grid architecture and session management.
+    """
+
+    namespace_id: str = Field(description="Namespace identifier")
+    type: NamespaceType = Field(description="Namespace type (blob or workspace)")
+    name: Optional[str] = Field(
+        None, description="Namespace name (required for workspaces)"
+    )
+
+    provider_type: str = Field(
+        description="Storage provider (vfs-memory, vfs-filesystem, etc.)"
+    )
+    scope: StorageScope = Field(description="Storage scope (session, user, sandbox)")
+
+    session_id: str = Field(description="Session identifier")
+    sandbox_id: str = Field(description="Sandbox identifier")
+    user_id: Optional[str] = Field(None, description="User identifier (for user scope)")
+    owner_id: Optional[str] = Field(
+        None, description="Owner ID (user_id for user scope)"
+    )
+
+    created_at: str = Field(description="Creation timestamp (ISO 8601)")
+    expires_at: Optional[str] = Field(
+        None, description="Expiration timestamp (ISO 8601)"
+    )
+    ttl_seconds: int = Field(description="Time-to-live in seconds")
+
+    grid_path: str = Field(description="Grid storage path")
+    current_path: str = Field(default="/", description="Current working directory")
+
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Custom metadata"
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+
+# ============================================================================
+# Workspace Models (Legacy API - backward compatibility)
+# ============================================================================
+
+
+class WorkspaceInfo(BaseModel):
+    """
+    Workspace information model.
+
+    Workspaces are VFS-backed file collections with same scoping as artifacts.
+    """
+
+    workspace_id: str = Field(description="Workspace identifier")
+    name: str = Field(description="Workspace name")
+    provider_type: str = Field(
+        description="Storage provider (vfs-memory, vfs-filesystem, etc.)"
+    )
+    scope: StorageScope = Field(description="Storage scope (session, user, sandbox)")
+    session_id: str = Field(description="Session identifier")
+    sandbox_id: str = Field(description="Sandbox identifier")
+    user_id: Optional[str] = Field(None, description="User identifier (for user scope)")
+    owner_id: Optional[str] = Field(
+        None, description="Owner ID (user_id for user scope)"
+    )
+
+    created_at: str = Field(description="Creation timestamp (ISO 8601)")
+    expires_at: Optional[str] = Field(
+        None, description="Expiration timestamp (ISO 8601)"
+    )
+    ttl_seconds: int = Field(description="Time-to-live in seconds")
+
+    grid_path: str = Field(description="Grid storage path")
+    current_path: str = Field(default="/", description="Current working directory")
+
+    mount_point: Optional[str] = Field(
+        None, description="FUSE mount point (if mounted)"
+    )
+    is_mounted: bool = Field(default=False, description="Whether workspace is mounted")
+
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Custom metadata"
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CheckpointInfo(BaseModel):
+    """
+    Checkpoint (snapshot) information.
+
+    Checkpoints capture workspace state for restore.
+    """
+
+    checkpoint_id: str = Field(description="Checkpoint identifier")
+    workspace_id: str = Field(description="Associated workspace ID")
+    name: Optional[str] = Field(None, description="Checkpoint name")
+    description: str = Field(description="Checkpoint description")
+    created_at: str = Field(description="Creation timestamp (ISO 8601)")
+    stats: Dict[str, Any] = Field(
+        default_factory=dict, description="Checkpoint statistics"
+    )
+
+    model_config = ConfigDict(extra="allow")
 
 
 __all__ = [
@@ -546,6 +677,7 @@ __all__ = [
     "StorageProvider",
     "SessionProvider",
     "OperationStatus",
+    "NamespaceType",  # NEW - unified VFS
     # Constants
     "DEFAULT_TTL",
     "DEFAULT_PRESIGN_EXPIRES",
@@ -569,4 +701,11 @@ __all__ = [
     "SessionID",
     "SandboxID",
     "UserID",
+    "WorkspaceID",
+    "NamespaceID",  # NEW - unified VFS
+    # Unified Namespace Models (Clean API)
+    "NamespaceInfo",  # NEW - unified VFS
+    # Workspace Models (Legacy API)
+    "WorkspaceInfo",
+    "CheckpointInfo",
 ]
