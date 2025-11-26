@@ -66,7 +66,9 @@ async def main():
             type=NamespaceType.BLOB,
             name=name,
             scope=scope,
-            user_id=user_id if scope in (StorageScope.USER, StorageScope.SESSION) else None,
+            user_id=(
+                user_id if scope in (StorageScope.USER, StorageScope.SESSION) else None
+            ),
             session_id=session_id if scope == StorageScope.SESSION else None,
         )
 
@@ -118,7 +120,9 @@ async def main():
             type=NamespaceType.WORKSPACE,
             name=name,
             scope=scope,
-            user_id=user_id if scope in (StorageScope.USER, StorageScope.SESSION) else None,
+            user_id=(
+                user_id if scope in (StorageScope.USER, StorageScope.SESSION) else None
+            ),
             session_id=session_id if scope == StorageScope.SESSION else None,
             provider_type=provider_type,
         )
@@ -198,7 +202,9 @@ async def main():
 
     print(f"\n✓ Found {len(artifacts)} user-scoped artifact(s):")
     for artifact in artifacts:
-        print(f"  • {artifact['type']:9} | {artifact['name']:15} | {artifact['namespace_id']}")
+        print(
+            f"  • {artifact['type']:9} | {artifact['name']:15} | {artifact['namespace_id']}"
+        )
 
     # ========================================================================
     # Part 5: Read Artifact Tool Pattern
@@ -266,7 +272,8 @@ async def main():
     print("-" * 70)
 
     print("\n✓ To create a complete MCP server, you would:")
-    print("""
+    print(
+        """
     from chuk_mcp_server import ChukMCPServer
     from chuk_artifacts import ArtifactStore
 
@@ -296,7 +303,8 @@ async def main():
     # Run server
     server = create_server()
     server.run_stdio()
-    """)
+    """
+    )
 
     # ========================================================================
     # Summary

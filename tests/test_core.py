@@ -864,6 +864,706 @@ class TestCoreOperationsEdgeCases:
         assert result == test_data
 
 
+class TestUpdateFileEdgeCases:
+    """Test edge cases for update_file method."""
+
+    @pytest.mark.asyncio
+    async def test_update_file_no_parameters(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test update_file when no update parameters are provided."""
+        with pytest.raises(ValueError) as exc_info:
+            await core_operations.update_file("test123")
+
+        assert "At least one update parameter must be provided" in str(exc_info.value)
+
+
+class TestRetrieveBodyTypes:
+    """Test different body response types in retrieve."""
+
+    @pytest.mark.asyncio
+    async def test_retrieve_bytes_body_type(self, core_operations, mock_artifact_store):
+        """Test retrieve with bytes body response (fallback case)."""
+        artifact_id = "test123"
+        test_data = b"test content"
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        mock_s3 = AsyncMock()
+        # Return a non-bytes, non-readable object to trigger bytes() fallback
+        mock_response = {"Body": bytearray(test_data)}
+        mock_s3.get_object.return_value = mock_response
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        result = await core_operations.retrieve(artifact_id)
+        assert result == bytes(test_data)
+
+
+class TestStreamUploadDownload:
+    """Test streaming upload and download operations."""
+
+    @pytest.mark.asyncio
+    async def test_stream_upload_closed_store(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_upload when store is closed."""
+        mock_artifact_store._closed = True
+
+        async def dummy_stream():
+            yield b"data"
+
+        with pytest.raises(ArtifactStoreError) as exc_info:
+            await core_operations.stream_upload(
+                dummy_stream(),
+                mime="text/plain",
+                summary="Test",
+                session_id="test-session",
+            )
+
+        assert "Store is closed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_stream_upload_with_native_support(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_upload with native streaming support."""
+        test_data = [b"chunk1", b"chunk2", b"chunk3"]
+        combined_data = b"".join(test_data)
+
+        async def data_stream():
+            for chunk in test_data:
+                yield chunk
+
+        # Mock S3 with native streaming support
+        mock_s3 = AsyncMock()
+        mock_s3.put_object_stream = AsyncMock(
+            return_value={"ContentLength": len(combined_data)}
+        )
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # Mock session
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with patch("uuid.uuid4") as mock_uuid:
+            mock_uuid.return_value.hex = "streamtest123"
+
+            artifact_id = await core_operations.stream_upload(
+                data_stream(),
+                mime="application/octet-stream",
+                summary="Stream test",
+                session_id="test-session",
+            )
+
+        assert artifact_id == "streamtest123"
+        mock_s3.put_object_stream.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_upload_fallback_without_native_support(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_upload fallback when native streaming not supported."""
+        test_data = [b"chunk1", b"chunk2"]
+
+        async def data_stream():
+            for chunk in test_data:
+                yield chunk
+
+        # Mock S3 WITHOUT put_object_stream (no attribute)
+        mock_s3 = Mock(spec=[])  # Empty spec so hasattr returns False
+        mock_s3.put_object = AsyncMock()
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # Mock session
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with patch("uuid.uuid4") as mock_uuid:
+            mock_uuid.return_value.hex = "fallbacktest123"
+
+            artifact_id = await core_operations.stream_upload(
+                data_stream(),
+                mime="application/octet-stream",
+                summary="Fallback test",
+                session_id="test-session",
+            )
+
+        assert artifact_id == "fallbacktest123"
+        mock_s3.put_object.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_upload_with_progress_callback(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_upload with progress callback."""
+        test_data = [b"chunk1", b"chunk2"]
+        progress_calls = []
+
+        def progress_callback(bytes_sent, total):
+            progress_calls.append((bytes_sent, total))
+
+        async def data_stream():
+            for chunk in test_data:
+                yield chunk
+
+        # Mock S3 without native support to trigger fallback with progress
+        mock_s3 = Mock(spec=[])
+        mock_s3.put_object = AsyncMock()
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        await core_operations.stream_upload(
+            data_stream(),
+            mime="text/plain",
+            summary="Progress test",
+            session_id="test-session",
+            progress_callback=progress_callback,
+            content_length=12,
+        )
+
+        # Verify progress was reported
+        assert len(progress_calls) > 0
+
+    @pytest.mark.asyncio
+    async def test_stream_upload_session_error(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_upload with session error."""
+
+        async def data_stream():
+            yield b"test"
+
+        mock_s3 = Mock(spec=[])
+        mock_s3.put_object = AsyncMock()
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # Mock session failure
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.side_effect = Exception("Session connection error")
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(SessionError) as exc_info:
+            await core_operations.stream_upload(
+                data_stream(),
+                mime="text/plain",
+                summary="Test",
+                session_id="test-session",
+            )
+
+        assert "Metadata storage failed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_stream_upload_provider_error(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_upload with provider error."""
+
+        async def data_stream():
+            yield b"test"
+
+        # Mock S3 failure
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.side_effect = Exception("Storage error")
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            await core_operations.stream_upload(
+                data_stream(),
+                mime="text/plain",
+                summary="Test",
+                session_id="test-session",
+            )
+
+        assert "Streaming storage failed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_stream_upload_retry_logic(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_upload retry logic."""
+        test_data = [b"test"]
+        call_count = 0
+
+        async def data_stream():
+            for chunk in test_data:
+                yield chunk
+
+        # Mock S3 that fails twice then succeeds
+        def create_s3_mock():
+            nonlocal call_count
+            call_count += 1
+            mock = Mock(spec=[])
+            if call_count <= 2:
+                mock.put_object = AsyncMock(side_effect=Exception("Temporary failure"))
+            else:
+                mock.put_object = AsyncMock()
+            return mock
+
+        mock_artifact_store._s3_factory.side_effect = lambda: create_storage_ctx(
+            create_s3_mock()
+        )
+
+        def create_storage_ctx(s3):
+            ctx = AsyncMock()
+            ctx.__aenter__.return_value = s3
+            ctx.__aexit__.return_value = None
+            return ctx
+
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            artifact_id = await core_operations.stream_upload(
+                data_stream(),
+                mime="text/plain",
+                summary="Retry test",
+                session_id="test-session",
+            )
+
+        assert isinstance(artifact_id, str)
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_stream_download_closed_store(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download when store is closed."""
+        mock_artifact_store._closed = True
+
+        with pytest.raises(ArtifactStoreError):
+            async for _ in core_operations.stream_download("test123"):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_download_with_native_streaming(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download with native streaming support."""
+        artifact_id = "test123"
+        test_chunks = [b"chunk1", b"chunk2", b"chunk3"]
+        combined_data = b"".join(test_chunks)
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(combined_data),
+            sha256=hashlib.sha256(combined_data).hexdigest(),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        # Mock S3 with native streaming
+        async def mock_stream(**kwargs):
+            for chunk in test_chunks:
+                yield chunk
+
+        mock_s3 = AsyncMock()
+        mock_s3.get_object_stream = mock_stream
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # Collect streamed data
+        received_chunks = []
+        async for chunk in core_operations.stream_download(artifact_id):
+            received_chunks.append(chunk)
+
+        assert b"".join(received_chunks) == combined_data
+
+    @pytest.mark.asyncio
+    async def test_stream_download_native_streaming_sha256_mismatch(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download with native streaming and SHA256 mismatch."""
+        artifact_id = "test123"
+        test_chunks = [b"chunk1", b"chunk2"]
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=12,
+            sha256="wronghash123",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        async def mock_stream(**kwargs):
+            for chunk in test_chunks:
+                yield chunk
+
+        mock_s3 = AsyncMock()
+        mock_s3.get_object_stream = mock_stream
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            async for _ in core_operations.stream_download(artifact_id):
+                pass
+
+        assert "SHA256 mismatch" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_stream_download_fallback_with_readable_body(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download fallback with readable body."""
+        artifact_id = "test123"
+        test_data = b"test content"
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            sha256=hashlib.sha256(test_data).hexdigest(),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        # Mock S3 without native streaming
+        mock_body = AsyncMock()
+        mock_body.read.return_value = test_data
+
+        mock_s3 = Mock(spec=[])  # No get_object_stream
+        mock_s3.get_object = AsyncMock(return_value={"Body": mock_body})
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        received_data = b""
+        async for chunk in core_operations.stream_download(artifact_id, chunk_size=5):
+            received_data += chunk
+
+        assert received_data == test_data
+        mock_body.read.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_download_fallback_with_bytes_body(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download fallback with bytes body."""
+        artifact_id = "test123"
+        test_data = b"test content"
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        mock_s3 = Mock(spec=[])
+        mock_s3.get_object = AsyncMock(return_value={"Body": test_data})
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        received_data = b""
+        async for chunk in core_operations.stream_download(artifact_id):
+            received_data += chunk
+
+        assert received_data == test_data
+
+    @pytest.mark.asyncio
+    async def test_stream_download_fallback_with_other_body_type(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download fallback with other body type."""
+        artifact_id = "test123"
+        test_data = b"test content"
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        mock_s3 = Mock(spec=[])
+        # Use bytearray to trigger bytes() conversion
+        mock_s3.get_object = AsyncMock(return_value={"Body": bytearray(test_data)})
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        received_data = b""
+        async for chunk in core_operations.stream_download(artifact_id):
+            received_data += chunk
+
+        assert received_data == bytes(test_data)
+
+    @pytest.mark.asyncio
+    async def test_stream_download_fallback_sha256_mismatch(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download fallback with SHA256 mismatch."""
+        artifact_id = "test123"
+        test_data = b"test content"
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            sha256="wronghash",
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        mock_s3 = Mock(spec=[])
+        mock_s3.get_object = AsyncMock(return_value={"Body": test_data})
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            async for _ in core_operations.stream_download(artifact_id):
+                pass
+
+        assert "SHA256 mismatch" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_stream_download_with_progress_callback(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test stream_download with progress callback."""
+        artifact_id = "test123"
+        test_data = b"test content for progress"
+        progress_calls = []
+
+        def progress_callback(bytes_sent, total):
+            progress_calls.append((bytes_sent, total))
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=len(test_data),
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        mock_s3 = Mock(spec=[])
+        mock_s3.get_object = AsyncMock(return_value={"Body": test_data})
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        async for _ in core_operations.stream_download(
+            artifact_id, chunk_size=5, progress_callback=progress_callback
+        ):
+            pass
+
+        # Verify progress was reported
+        assert len(progress_calls) > 0
+
+    @pytest.mark.asyncio
+    async def test_stream_download_error(self, core_operations, mock_artifact_store):
+        """Test stream_download error handling."""
+        artifact_id = "test123"
+
+        record = ArtifactMetadata(
+            artifact_id=artifact_id,
+            key="test/key",
+            session_id="session123",
+            sandbox_id="test-sandbox",
+            mime="text/plain",
+            summary="Test",
+            meta={},
+            bytes=100,
+            stored_at="2025-01-01T00:00:00Z",
+            ttl=900,
+            storage_provider="memory",
+            session_provider="memory",
+        )
+        core_operations._get_record = AsyncMock(return_value=record)
+
+        # Mock S3 failure
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.side_effect = Exception("Download error")
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            async for _ in core_operations.stream_download(artifact_id):
+                pass
+
+        assert "Streaming retrieval failed" in str(exc_info.value)
+
+
+class TestGetRecordErrorPaths:
+    """Test _get_record error handling."""
+
+    @pytest.mark.asyncio
+    async def test_get_record_session_error(self, core_operations, mock_artifact_store):
+        """Test _get_record with session error."""
+        artifact_id = "test123"
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.side_effect = Exception("Session connection error")
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(SessionError) as exc_info:
+            await core_operations._get_record(artifact_id)
+
+        assert "Session error" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_record_not_found(self, core_operations, mock_artifact_store):
+        """Test _get_record when artifact not found."""
+        artifact_id = "nonexistent"
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = None
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(Exception) as exc_info:
+            await core_operations._get_record(artifact_id)
+
+        assert "not found" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_get_record_corrupted_metadata(
+        self, core_operations, mock_artifact_store
+    ):
+        """Test _get_record with corrupted metadata."""
+        artifact_id = "test123"
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = "invalid json {"
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            await core_operations._get_record(artifact_id)
+
+        assert "Corrupted metadata" in str(exc_info.value)
+
+
 class TestDefaultConstants:
     """Test default constants and configuration."""
 

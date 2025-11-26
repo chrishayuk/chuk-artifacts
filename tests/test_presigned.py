@@ -969,6 +969,702 @@ class TestLogging:
             assert "Presigned URL generation failed" in str(log_call)
 
 
+class TestPresignUploadOAuthError:
+    """Test OAuth error handling in presign_upload."""
+
+    @pytest.mark.asyncio
+    async def test_presign_upload_oauth_error(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test upload URL with OAuth credential error."""
+        mock_artifact_store._session_manager.allocate_session.return_value = "session"
+        mock_artifact_store.generate_artifact_key.return_value = "test/key"
+
+        mock_s3 = AsyncMock()
+        mock_s3.generate_presigned_url.side_effect = Exception(
+            "OAuth credentials not supported"
+        )
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        with pytest.raises(NotImplementedError) as exc_info:
+            await presigned_operations.presign_upload()
+
+        assert "OAuth" in str(exc_info.value)
+        assert "HMAC creds" in str(exc_info.value)
+
+
+class TestRegisterUploadedArtifactProviderError:
+    """Test provider error handling in register_uploaded_artifact."""
+
+    @pytest.mark.asyncio
+    async def test_register_uploaded_artifact_provider_error(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test registration with general provider error."""
+        artifact_id = "test123"
+
+        mock_artifact_store._session_manager.allocate_session.return_value = "session"
+        mock_artifact_store.generate_artifact_key.return_value = "test/key"
+
+        # Mock successful storage
+        mock_s3 = AsyncMock()
+        mock_s3.head_object.return_value = {"ContentLength": 1024}
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # Mock session failure with generic error
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.side_effect = Exception("Storage failure")
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            await presigned_operations.register_uploaded_artifact(
+                artifact_id, mime="text/plain", summary="Test file"
+            )
+
+        assert "Metadata registration failed" in str(exc_info.value)
+
+
+class TestMultipartUploadInitiate:
+    """Test multipart upload initiation."""
+
+    @pytest.mark.asyncio
+    async def test_initiate_multipart_upload_user_scope(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test multipart upload initiation with user scope."""
+        from chuk_artifacts.models import MultipartUploadInitRequest
+
+        request = MultipartUploadInitRequest(
+            filename="video.mp4",
+            mime_type="video/mp4",
+            user_id="alice",
+            scope="user",
+        )
+
+        mock_artifact_store._session_manager.allocate_session.return_value = (
+            "session123"
+        )
+
+        # Mock S3 with multipart support
+        mock_s3 = AsyncMock()
+        mock_s3.create_multipart_upload = AsyncMock(
+            return_value={"UploadId": "upload-123"}
+        )
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # Mock session storage
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with patch("uuid.uuid4") as mock_uuid:
+            mock_uuid.return_value.hex = "artifact123"
+
+            result = await presigned_operations.initiate_multipart_upload(request)
+
+        assert result["upload_id"] == "upload-123"
+        assert result["artifact_id"] == "artifact123"
+        assert "users/alice" in result["key"]
+        mock_s3.create_multipart_upload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_initiate_multipart_upload_sandbox_scope(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test multipart upload with sandbox scope."""
+        from chuk_artifacts.models import MultipartUploadInitRequest
+
+        request = MultipartUploadInitRequest(
+            filename="shared.pdf",
+            mime_type="application/pdf",
+            scope="sandbox",
+        )
+
+        mock_artifact_store._session_manager.allocate_session.return_value = (
+            "session123"
+        )
+
+        mock_s3 = AsyncMock()
+        mock_s3.create_multipart_upload = AsyncMock(
+            return_value={"UploadId": "upload-456"}
+        )
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with patch("uuid.uuid4") as mock_uuid:
+            mock_uuid.return_value.hex = "artifact456"
+
+            result = await presigned_operations.initiate_multipart_upload(request)
+
+        assert "shared" in result["key"]
+
+    @pytest.mark.asyncio
+    async def test_initiate_multipart_upload_without_native_support(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test multipart upload without native multipart support."""
+        from chuk_artifacts.models import MultipartUploadInitRequest
+
+        request = MultipartUploadInitRequest(
+            filename="file.bin",
+            mime_type="application/octet-stream",
+        )
+
+        mock_artifact_store._session_manager.allocate_session.return_value = (
+            "session123"
+        )
+
+        # Mock S3 WITHOUT create_multipart_upload
+        mock_s3 = AsyncMock()
+        # Don't set create_multipart_upload attribute
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        result = await presigned_operations.initiate_multipart_upload(request)
+
+        # Should generate pseudo upload_id
+        assert result["upload_id"].startswith("upload-")
+
+    @pytest.mark.asyncio
+    async def test_initiate_multipart_upload_error(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test error handling in multipart upload initiation."""
+        from chuk_artifacts.models import MultipartUploadInitRequest
+
+        request = MultipartUploadInitRequest(
+            filename="file.bin",
+            mime_type="application/octet-stream",
+        )
+
+        mock_artifact_store._session_manager.allocate_session.return_value = (
+            "session123"
+        )
+
+        # Mock S3 failure
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.side_effect = Exception("S3 failure")
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            await presigned_operations.initiate_multipart_upload(request)
+
+        assert "Multipart upload initiation failed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_initiate_multipart_upload_user_scope_validation(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test user scope requires user_id."""
+        from chuk_artifacts.models import MultipartUploadInitRequest
+
+        request = MultipartUploadInitRequest(
+            filename="file.bin",
+            mime_type="application/octet-stream",
+            scope="user",
+            # Missing user_id
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            await presigned_operations.initiate_multipart_upload(request)
+
+        assert "user_id is required" in str(exc_info.value)
+
+
+class TestGetPartUploadUrl:
+    """Test get_part_upload_url method."""
+
+    @pytest.mark.asyncio
+    async def test_get_part_upload_url_success(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test successful part upload URL generation."""
+        upload_id = "upload-123"
+        part_number = 1
+
+        # Mock session with multipart metadata
+        multipart_meta = {
+            "upload_id": upload_id,
+            "artifact_id": "artifact123",
+            "key": "test/key/artifact123",
+            "session_id": "session123",
+            "filename": "video.mp4",
+            "mime_type": "video/mp4",
+        }
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        # Mock S3 with presigned URL support
+        mock_s3 = AsyncMock()
+        mock_s3.generate_presigned_url = AsyncMock(
+            return_value="https://example.com/part-url"
+        )
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        url = await presigned_operations.get_part_upload_url(upload_id, part_number)
+
+        assert url == "https://example.com/part-url"
+        mock_s3.generate_presigned_url.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_part_upload_url_fallback(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test part upload URL fallback without native support."""
+        upload_id = "upload-123"
+        part_number = 2
+
+        multipart_meta = {
+            "upload_id": upload_id,
+            "key": "test/key",
+            "mime_type": "application/pdf",
+        }
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        # Mock S3 WITHOUT generate_presigned_url - should raise ProviderError
+        mock_s3 = AsyncMock()
+        # Remove the attribute to trigger error
+        delattr(mock_s3, "generate_presigned_url")
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # This should raise ProviderError
+        with pytest.raises(ProviderError):
+            await presigned_operations.get_part_upload_url(upload_id, part_number)
+
+    @pytest.mark.asyncio
+    async def test_get_part_upload_url_invalid_part_number(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test invalid part number validation."""
+        with pytest.raises(ValueError) as exc_info:
+            await presigned_operations.get_part_upload_url("upload-123", 0)
+
+        assert "Part number must be between 1 and 10,000" in str(exc_info.value)
+
+        with pytest.raises(ValueError) as exc_info:
+            await presigned_operations.get_part_upload_url("upload-123", 10001)
+
+        assert "Part number must be between 1 and 10,000" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_part_upload_url_not_found(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test part URL generation when upload not found."""
+        mock_session = AsyncMock()
+        mock_session.get.return_value = None
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(ArtifactNotFoundError) as exc_info:
+            await presigned_operations.get_part_upload_url("nonexistent", 1)
+
+        assert "not found" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_part_upload_url_error(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test error handling in part URL generation."""
+        multipart_meta = {"key": "test/key"}
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        # Mock S3 failure
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.side_effect = Exception("S3 error")
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            await presigned_operations.get_part_upload_url("upload-123", 1)
+
+        assert "Part upload URL generation failed" in str(exc_info.value)
+
+
+class TestCompleteMultipartUpload:
+    """Test complete_multipart_upload method."""
+
+    @pytest.mark.asyncio
+    async def test_complete_multipart_upload_success(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test successful multipart upload completion."""
+        from chuk_artifacts.models import (
+            MultipartUploadCompleteRequest,
+            MultipartUploadPart,
+        )
+
+        request = MultipartUploadCompleteRequest(
+            upload_id="upload-123",
+            parts=[
+                MultipartUploadPart(PartNumber=1, ETag="etag1"),
+                MultipartUploadPart(PartNumber=2, ETag="etag2"),
+            ],
+            summary="Large file upload",
+        )
+
+        multipart_meta = {
+            "upload_id": "upload-123",
+            "artifact_id": "artifact123",
+            "key": "test/key/artifact123",
+            "session_id": "session123",
+            "filename": "video.mp4",
+            "mime_type": "video/mp4",
+            "ttl": 900,
+            "meta": {},
+        }
+
+        # Mock session operations
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        # Mock S3 with native multipart support
+        mock_s3 = AsyncMock()
+        mock_s3.complete_multipart_upload = AsyncMock()
+        mock_s3.head_object.return_value = {"ContentLength": 10240}
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        artifact_id = await presigned_operations.complete_multipart_upload(request)
+
+        assert artifact_id == "artifact123"
+        mock_s3.complete_multipart_upload.assert_called_once()
+        mock_session.delete.assert_called_once_with("multipart:upload-123")
+
+    @pytest.mark.asyncio
+    async def test_complete_multipart_upload_fallback(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test multipart completion fallback without native support."""
+        from chuk_artifacts.models import (
+            MultipartUploadCompleteRequest,
+            MultipartUploadPart,
+        )
+
+        request = MultipartUploadCompleteRequest(
+            upload_id="upload-123",
+            parts=[
+                MultipartUploadPart(PartNumber=1, ETag="etag1"),
+            ],
+            summary="File upload",
+        )
+
+        multipart_meta = {
+            "upload_id": "upload-123",
+            "artifact_id": "artifact123",
+            "key": "test/key",
+            "session_id": "session123",
+            "mime_type": "text/plain",
+            "ttl": 900,
+        }
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        # Mock S3 WITHOUT native multipart support
+        mock_s3 = AsyncMock()
+        # Ensure complete_multipart_upload doesn't exist
+        if hasattr(mock_s3, "complete_multipart_upload"):
+            delattr(mock_s3, "complete_multipart_upload")
+
+        # create mock part data
+        mock_part_body = AsyncMock()
+        mock_part_body.read.return_value = b"part data"
+        mock_s3.get_object.return_value = {"Body": mock_part_body}
+        mock_s3.put_object = AsyncMock()
+        mock_s3.delete_object = AsyncMock()
+        mock_s3.head_object.return_value = {"ContentLength": 100}
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        artifact_id = await presigned_operations.complete_multipart_upload(request)
+
+        assert artifact_id == "artifact123"
+        mock_s3.put_object.assert_called_once()
+        mock_s3.delete_object.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_complete_multipart_upload_not_found(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test completion when upload not found."""
+        from chuk_artifacts.models import (
+            MultipartUploadCompleteRequest,
+            MultipartUploadPart,
+        )
+
+        request = MultipartUploadCompleteRequest(
+            upload_id="nonexistent",
+            parts=[MultipartUploadPart(PartNumber=1, ETag="etag1")],
+            summary="Test",
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = None
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(ArtifactNotFoundError):
+            await presigned_operations.complete_multipart_upload(request)
+
+    @pytest.mark.asyncio
+    async def test_complete_multipart_upload_head_object_failure(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test completion when head_object fails."""
+        from chuk_artifacts.models import (
+            MultipartUploadCompleteRequest,
+            MultipartUploadPart,
+        )
+
+        request = MultipartUploadCompleteRequest(
+            upload_id="upload-123",
+            parts=[MultipartUploadPart(PartNumber=1, ETag="etag1")],
+            summary="Test",
+        )
+
+        multipart_meta = {
+            "upload_id": "upload-123",
+            "artifact_id": "artifact123",
+            "key": "test/key",
+            "session_id": "session123",
+            "ttl": 900,
+        }
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        mock_s3 = AsyncMock()
+        mock_s3.complete_multipart_upload = AsyncMock()
+        mock_s3.head_object.side_effect = Exception("Head failed")
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        # Should still succeed but with file_size = 0
+        artifact_id = await presigned_operations.complete_multipart_upload(request)
+        assert artifact_id == "artifact123"
+
+    @pytest.mark.asyncio
+    async def test_complete_multipart_upload_error(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test error handling in multipart completion."""
+        from chuk_artifacts.models import (
+            MultipartUploadCompleteRequest,
+            MultipartUploadPart,
+        )
+
+        request = MultipartUploadCompleteRequest(
+            upload_id="upload-123",
+            parts=[MultipartUploadPart(PartNumber=1, ETag="etag1")],
+            summary="Test",
+        )
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.side_effect = Exception("Session error")
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        with pytest.raises(ProviderError) as exc_info:
+            await presigned_operations.complete_multipart_upload(request)
+
+        assert "Multipart upload completion failed" in str(exc_info.value)
+
+
+class TestAbortMultipartUpload:
+    """Test abort_multipart_upload method."""
+
+    @pytest.mark.asyncio
+    async def test_abort_multipart_upload_success(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test successful multipart upload abort."""
+        upload_id = "upload-123"
+
+        multipart_meta = {
+            "upload_id": upload_id,
+            "key": "test/key",
+        }
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        mock_s3 = AsyncMock()
+        mock_s3.abort_multipart_upload = AsyncMock()
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        result = await presigned_operations.abort_multipart_upload(upload_id)
+
+        assert result is True
+        mock_s3.abort_multipart_upload.assert_called_once()
+        mock_session.delete.assert_called_once_with(f"multipart:{upload_id}")
+
+    @pytest.mark.asyncio
+    async def test_abort_multipart_upload_already_cleaned(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test abort when upload already cleaned up."""
+        upload_id = "upload-123"
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = None
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        result = await presigned_operations.abort_multipart_upload(upload_id)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_abort_multipart_upload_s3_error_ignored(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test abort when S3 abort fails (should be ignored)."""
+        upload_id = "upload-123"
+
+        multipart_meta = {
+            "upload_id": upload_id,
+            "key": "test/key",
+        }
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = str(multipart_meta)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.return_value = mock_session
+        mock_session_ctx.__aexit__.return_value = None
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        mock_s3 = AsyncMock()
+        mock_s3.abort_multipart_upload.side_effect = Exception("Already aborted")
+
+        mock_storage_ctx = AsyncMock()
+        mock_storage_ctx.__aenter__.return_value = mock_s3
+        mock_storage_ctx.__aexit__.return_value = None
+        mock_artifact_store._s3_factory.return_value = mock_storage_ctx
+
+        result = await presigned_operations.abort_multipart_upload(upload_id)
+
+        # Should still succeed
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_abort_multipart_upload_error(
+        self, presigned_operations, mock_artifact_store
+    ):
+        """Test error handling in abort."""
+        upload_id = "upload-123"
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__.side_effect = Exception("Session error")
+        mock_artifact_store._session_factory.return_value = mock_session_ctx
+
+        result = await presigned_operations.abort_multipart_upload(upload_id)
+
+        # Should return False on error
+        assert result is False
+
+
 class TestDefaultConstants:
     """Test default constants."""
 
