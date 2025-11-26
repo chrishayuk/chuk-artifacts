@@ -316,7 +316,7 @@ requires-dist = [
     { name = "aioboto3", specifier = ">=14.3.0" },
     { name = "asyncio", specifier = ">=3.4.3" },
     { name = "chuk-sessions", specifier = ">=0.5.2" },
-    { name = "chuk-virtual-fs", specifier = ">=0.2.2" },
+    { name = "chuk-virtual-fs", specifier = ">=0.3" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },

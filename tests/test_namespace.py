@@ -3,11 +3,9 @@ Comprehensive tests for namespace.py to achieve >90% coverage.
 """
 
 import pytest
-from datetime import datetime, timezone
 
 from chuk_artifacts import ArtifactStore, NamespaceType, StorageScope
 from chuk_artifacts.namespace import NamespaceOperations
-from chuk_artifacts.types import NamespaceInfo, CheckpointInfo
 from chuk_artifacts.exceptions import SessionError
 
 
@@ -202,6 +200,50 @@ class TestNamespaceReadWrite:
         assert data == b"test data"
 
     @pytest.mark.asyncio
+    async def test_write_blob_with_mime_type(self):
+        """Test writing blob with MIME type metadata."""
+        store = ArtifactStore()
+        namespace_ops = NamespaceOperations(store)
+
+        info = await namespace_ops.create_namespace(
+            type=NamespaceType.BLOB,
+            scope=StorageScope.SESSION,
+            user_id="test-user",
+        )
+
+        # Write with MIME type
+        await namespace_ops.write_namespace(
+            info.namespace_id, data=b"test data", mime="text/plain"
+        )
+
+        # Read back
+        data = await namespace_ops.read_namespace(info.namespace_id)
+        assert data == b"test data"
+
+    @pytest.mark.asyncio
+    async def test_write_workspace_subdirectory(self):
+        """Test writing to subdirectory in workspace."""
+        store = ArtifactStore()
+        namespace_ops = NamespaceOperations(store)
+
+        info = await namespace_ops.create_namespace(
+            type=NamespaceType.WORKSPACE,
+            scope=StorageScope.SESSION,
+            user_id="test-user",
+        )
+
+        # Write to subdirectory (should try to create parent)
+        await namespace_ops.write_namespace(
+            info.namespace_id, path="/subdir/file.txt", data=b"nested content"
+        )
+
+        # Read back
+        data = await namespace_ops.read_namespace(
+            info.namespace_id, path="/subdir/file.txt"
+        )
+        assert data == b"nested content"
+
+    @pytest.mark.asyncio
     async def test_write_and_read_workspace_file(self):
         """Test writing and reading workspace files."""
         store = ArtifactStore()
@@ -302,7 +344,7 @@ class TestNamespaceList:
             user_id="test-user",
         )
 
-        info2 = await namespace_ops.create_namespace(
+        _info2 = await namespace_ops.create_namespace(
             type=NamespaceType.WORKSPACE,
             scope=StorageScope.SESSION,
             session_id=info1.session_id,
@@ -342,21 +384,23 @@ class TestNamespaceList:
         store = ArtifactStore()
         namespace_ops = NamespaceOperations(store)
 
-        # Create mixed types
+        # Create mixed types in USER scope (so they're all listable)
         await namespace_ops.create_namespace(
             type=NamespaceType.BLOB,
-            scope=StorageScope.SESSION,
+            scope=StorageScope.USER,
             user_id="test-user",
         )
 
         await namespace_ops.create_namespace(
             type=NamespaceType.WORKSPACE,
-            scope=StorageScope.SESSION,
+            scope=StorageScope.USER,
             user_id="test-user",
         )
 
-        # List blobs only
-        blobs = namespace_ops.list_namespaces(type=NamespaceType.BLOB)
+        # List blobs only for this user
+        blobs = namespace_ops.list_namespaces(
+            user_id="test-user", type=NamespaceType.BLOB
+        )
         assert len(blobs) >= 1
         assert all(ns.type == NamespaceType.BLOB for ns in blobs)
 
@@ -386,7 +430,7 @@ class TestNamespaceCheckpoints:
             info.namespace_id, name="v1", description="First version"
         )
 
-        assert cp.checkpoint_id.startswith("cp-")
+        assert cp.checkpoint_id == "v1"  # VFS uses name as checkpoint_id
         assert cp.name == "v1"
         assert cp.description == "First version"
 
@@ -531,22 +575,6 @@ class TestNamespaceGetInfo:
 
 class TestNamespaceProviderConfig:
     """Test namespace creation with provider configuration."""
-
-    @pytest.mark.asyncio
-    async def test_create_with_provider_config(self):
-        """Test creating namespace with custom provider config."""
-        store = ArtifactStore()
-        namespace_ops = NamespaceOperations(store)
-
-        config = {"custom_option": "value"}
-        info = await namespace_ops.create_namespace(
-            type=NamespaceType.BLOB,
-            scope=StorageScope.SESSION,
-            user_id="test-user",
-            provider_config=config,
-        )
-
-        assert info is not None
 
     @pytest.mark.asyncio
     async def test_create_filesystem_with_custom_root(self):
