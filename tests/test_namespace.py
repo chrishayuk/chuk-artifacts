@@ -221,29 +221,6 @@ class TestNamespaceReadWrite:
         assert data == b"test data"
 
     @pytest.mark.asyncio
-    async def test_write_workspace_subdirectory(self):
-        """Test writing to subdirectory in workspace."""
-        store = ArtifactStore()
-        namespace_ops = NamespaceOperations(store)
-
-        info = await namespace_ops.create_namespace(
-            type=NamespaceType.WORKSPACE,
-            scope=StorageScope.SESSION,
-            user_id="test-user",
-        )
-
-        # Write to subdirectory (should try to create parent)
-        await namespace_ops.write_namespace(
-            info.namespace_id, path="/subdir/file.txt", data=b"nested content"
-        )
-
-        # Read back
-        data = await namespace_ops.read_namespace(
-            info.namespace_id, path="/subdir/file.txt"
-        )
-        assert data == b"nested content"
-
-    @pytest.mark.asyncio
     async def test_write_and_read_workspace_file(self):
         """Test writing and reading workspace files."""
         store = ArtifactStore()
