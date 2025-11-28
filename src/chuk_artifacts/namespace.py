@@ -460,7 +460,7 @@ class NamespaceOperations:
                     raise PermissionError(f"Access denied to namespace: {namespace_id}")
 
             # Cleanup VFS
-            if hasattr(vfs.provider, "cleanup"):
+            if vfs.provider and hasattr(vfs.provider, "cleanup"):
                 await vfs.provider.cleanup()
 
             # Remove snapshot manager

@@ -254,6 +254,8 @@ class VFSAdapter:
         else:
             # Fallback: read entire file and chunk it
             data = await self.vfs.read_binary(vfs_path)
+            if data is None:
+                raise FileNotFoundError(f"File not found: {vfs_path}")
             for i in range(0, len(data), ChunkSize):
                 chunk = data[i : i + ChunkSize]
                 bytes_read += len(chunk)
@@ -327,9 +329,11 @@ class VFSAdapter:
         # Check if VFS supports presigned URLs (S3 provider)
         if hasattr(self.vfs, "generate_presigned_url"):
             try:
-                return await self.vfs.generate_presigned_url(
-                    vfs_path, expires_in=ExpiresIn, operation=operation
+                url = await self.vfs.generate_presigned_url(
+                    vfs_path, expires_in=ExpiresIn
                 )
+                if url is not None:
+                    return url
             except Exception as e:
                 logger.debug(
                     f"VFS presigned URL failed, falling back to memory URL: {e}"

@@ -282,7 +282,7 @@ wheels = [
 
 [[package]]
 name = "chuk-artifacts"
-version = "0.9"
+version = "0.9.1"
 source = { editable = "." }
 dependencies = [
     { name = "aioboto3" },
@@ -316,7 +316,7 @@ requires-dist = [
     { name = "aioboto3", specifier = ">=14.3.0" },
     { name = "asyncio", specifier = ">=3.4.3" },
     { name = "chuk-sessions", specifier = ">=0.5.2" },
-    { name = "chuk-virtual-fs", specifier = ">=0.3" },
+    { name = "chuk-virtual-fs", specifier = ">=0.3.1" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
@@ -352,7 +352,7 @@ wheels = [
 
 [[package]]
 name = "chuk-virtual-fs"
-version = "0.3"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aioboto3" },
@@ -363,9 +363,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "wsgidav" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/89/5c/49905db1c9893d09a3d29287f1b8991ee9f355e5d378a89c10afa275a9de/chuk_virtual_fs-0.3.tar.gz", hash = "sha256:f690d8de9f123d53b4ae7bcc8dac1c6e9324e4bbb0cf6cc3daf82c40961936ff", size = 215911, upload-time = "2025-11-25T21:58:54.128Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/3b/b18927b09fd8118ff324daa2dc3e616d126cec63198c4d8502e7e092e0ad/chuk_virtual_fs-0.3.1.tar.gz", hash = "sha256:8088459f1e4ee6fec83d0f0285ffdb90b041c7188ba4d17eeab8001070b693be", size = 216045, upload-time = "2025-11-28T00:57:43.481Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/b4/36b186312e97cbf9e4e9075b5dfa9d1bad24511689fd19b9900e2701a734/chuk_virtual_fs-0.3-py3-none-any.whl", hash = "sha256:8ca85e6c0cfa0365ade23593470f905e16ac47b34d5bebdb3466daf611678075", size = 125728, upload-time = "2025-11-25T21:58:52.544Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/10/ca0efa9582b604a9f8470f39655db4b88a04b4ae0214790112f05870a05d/chuk_virtual_fs-0.3.1-py3-none-any.whl", hash = "sha256:5c2c7ee5a0e96611379ca29891d955bc33750e9b09f0a0e181ff16d5563522df", size = 125926, upload-time = "2025-11-28T00:57:41.769Z" },
 ]
 
 [[package]]
@@ -1075,7 +1075,7 @@ wheels = [
 
 [[package]]
 name = "pydantic"
-version = "2.12.4"
+version = "2.12.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-types" },
@@ -1083,9 +1083,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/96/ad/a17bc283d7d81837c061c49e3eaa27a45991759a1b7eae1031921c6bd924/pydantic-2.12.4.tar.gz", hash = "sha256:0f8cb9555000a4b5b617f66bfd2566264c4984b27589d3b845685983e8ea85ac", size = 821038, upload-time = "2025-11-05T10:50:08.59Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/44/36f1a6e523abc58ae5f928898e4aca2e0ea509b5aa6f6f392a5d882be928/pydantic-2.12.5.tar.gz", hash = "sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49", size = 821591, upload-time = "2025-11-26T15:11:46.471Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/2f/e68750da9b04856e2a7ec56fc6f034a5a79775e9b9a81882252789873798/pydantic-2.12.4-py3-none-any.whl", hash = "sha256:92d3d202a745d46f9be6df459ac5a064fdaa3c1c4cd8adcfa332ccf3c05f871e", size = 463400, upload-time = "2025-11-05T10:50:06.732Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/87/b70ad306ebb6f9b585f114d0ac2137d792b48be34d732d60e597c2f8465a/pydantic-2.12.5-py3-none-any.whl", hash = "sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d", size = 463580, upload-time = "2025-11-26T15:11:44.605Z" },
 ]
 
 [[package]]
